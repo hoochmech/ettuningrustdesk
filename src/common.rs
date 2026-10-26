@@ -1050,10 +1050,15 @@ pub(crate) fn release_id_from_update_url(update_url: &str) -> ResultType<String>
     };
     let segments = segments.collect::<Vec<_>>();
     let release_id = match segments.as_slice() {
-        ["rustdesk", "rustdesk", "releases", "tag", release_id] => *release_id,
-        ["rustdesk", "rustdesk", "releases", "tag", release_id, ""] => *release_id,
+        [owner, repo, "releases", "tag", release_id]
+        | [owner, repo, "releases", "tag", release_id, ""]
+            if *owner == crate::branding::UPDATE_REPO_OWNER
+                && *repo == crate::branding::UPDATE_REPO_NAME =>
+        {
+            *release_id
+        }
         _ => bail!(
-            "Update URL is not a RustDesk release tag URL: {}",
+            "Update URL is not one of our release tag URLs: {}",
             update_url
         ),
     };
@@ -1103,9 +1108,16 @@ fn clear_software_update_url() {
     *update_url = String::new();
 }
 
+/// The fields we use from GitHub's "latest release" API response.
+/// `/releases/latest` already skips drafts and prereleases.
+#[derive(serde::Deserialize)]
+struct LatestRelease {
+    html_url: String,
+}
+
 fn process_software_update_check_response(bytes: Bytes) -> ResultType<()> {
-    let resp: hbb_common::VersionCheckResponse = serde_json::from_slice(&bytes)?;
-    let response_url = resp.url;
+    let resp: LatestRelease = serde_json::from_slice(&bytes)?;
+    let response_url = resp.html_url;
     let release_id = release_id_from_update_url(&response_url)?;
     let latest_release_version = display_version_from_release_id(&release_id)?;
 
@@ -1127,25 +1139,30 @@ fn process_software_update_check_response(bytes: Bytes) -> ResultType<()> {
 }
 
 // No need to check `danger_accept_invalid_cert` for now.
-// Because the url is always `https://api.rustdesk.com/version/latest`.
+// Because the url is always GitHub's public API.
 #[tokio::main(flavor = "current_thread")]
 pub async fn do_check_software_update() -> hbb_common::ResultType<()> {
-    let (request, url) =
-        hbb_common::version_check_request(hbb_common::VER_TYPE_RUSTDESK_CLIENT.to_string());
+    let url = crate::branding::latest_release_api_url();
     let proxy_conf = Config::get_socks();
     let tls_url = get_url_for_tls(&url, &proxy_conf);
     let tls_type = get_cached_tls_type(tls_url);
     let is_tls_not_cached = tls_type.is_none();
     let tls_type = tls_type.unwrap_or(TlsType::Rustls);
-    let client = create_http_client_async(tls_type, false);
-    let latest_release_response: ResultType<_> = match client.post(&url).json(&request).send().await
-    {
+    // GitHub's API rejects requests without a User-Agent.
+    let user_agent = format!("{}/{}", crate::branding::APP_NAME, crate::VERSION);
+    let get_latest = |tls_type| {
+        create_http_client_async(tls_type, false)
+            .get(&url)
+            .header("User-Agent", &user_agent)
+            .header("Accept", "application/vnd.github+json")
+            .send()
+    };
+    let latest_release_response: ResultType<_> = match get_latest(tls_type).await {
         Ok(resp) => Ok((tls_type, resp)),
         Err(err) => {
             if is_tls_not_cached && err.is_request() {
                 let tls_type = TlsType::NativeTls;
-                let client = create_http_client_async(tls_type, false);
-                match client.post(&url).json(&request).send().await {
+                match get_latest(tls_type).await {
                     Ok(resp) => Ok((tls_type, resp)),
                     Err(err) => Err(err.into()),
                 }
@@ -2460,6 +2477,7 @@ pub fn rustdesk_interval(i: Interval) -> ThrottledInterval {
 }
 
 pub fn load_custom_client() {
+    crate::branding::apply();
     #[cfg(debug_assertions)]
     if let Ok(data) = std::fs::read_to_string("./custom.txt") {
         read_custom_client(data.trim());
@@ -2558,6 +2576,7 @@ pub fn get_dst_align_rgba() -> usize {
 }
 
 pub fn read_custom_client(config: &str) {
+    crate::branding::apply();
     let Ok(data) = decode64(config) else {
         log::error!("Failed to decode custom client config");
         return;
@@ -2658,9 +2677,11 @@ pub fn get_builtin_option(key: &str) -> String {
         .unwrap_or_default()
 }
 
+// Branding is compiled in (see `crate::branding`), not loaded from a signed
+// custom.txt, so this build takes the stock update and install paths.
 #[inline]
 pub fn is_custom_client() -> bool {
-    get_app_name() != "RustDesk"
+    false
 }
 
 pub fn verify_login(_raw: &str, _id: &str) -> bool {
@@ -3057,8 +3078,8 @@ mod tests {
     use std::collections::HashSet;
 
     #[test]
-    fn parses_stable_rustdesk_release_url() {
-        let update_url = "https://github.com/rustdesk/rustdesk/releases/tag/v1.4.6";
+    fn parses_stable_release_url() {
+        let update_url = "https://github.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6";
 
         assert_eq!(release_id_from_update_url(update_url).unwrap(), "v1.4.6");
         assert_eq!(display_version_from_release_id("v1.4.6").unwrap(), "1.4.6");
@@ -3071,19 +3092,21 @@ mod tests {
     #[test]
     fn rejects_untrusted_release_urls_and_unstable_versions() {
         for update_url in [
-            "http://github.com/rustdesk/rustdesk/releases/tag/v1.4.6",
-            "https://github.com:8443/rustdesk/rustdesk/releases/tag/v1.4.6",
-            "https://github.com:443/rustdesk/rustdesk/releases/tag/v1.4.6",
-            "https://user@github.com/rustdesk/rustdesk/releases/tag/v1.4.6",
-            "https://example.com/rustdesk/rustdesk/releases/tag/v1.4.6",
-            "https://github.com/other/rustdesk/releases/tag/v1.4.6",
-            "https://github.com/rustdesk/other/releases/tag/v1.4.6",
-            "https://github.com/rustdesk/rustdesk/releases/download/v1.4.6/rustdesk.exe",
-            "https://github.com/rustdesk/rustdesk/releases/tag/v1.4.6?x=1",
-            "https://github.com/rustdesk/rustdesk/releases/tag/v1.4.6#asset",
-            "https://github.com/rustdesk/rustdesk/releases/tag/v1.4.6/extra",
-            "https://github.com/rustdesk/rustdesk/releases/tag/v1%2F4%2F6",
-            "https://github.com/rustdesk/rustdesk/releases/tag/%2e%2e",
+            "http://github.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6",
+            "https://github.com:8443/hoochmech/ettuningrustdesk/releases/tag/v1.4.6",
+            "https://github.com:443/hoochmech/ettuningrustdesk/releases/tag/v1.4.6",
+            "https://user@github.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6",
+            "https://example.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6",
+            "https://github.com/other/ettuningrustdesk/releases/tag/v1.4.6",
+            "https://github.com/hoochmech/other/releases/tag/v1.4.6",
+            // Stock RustDesk releases are not ours to install.
+            "https://github.com/rustdesk/rustdesk/releases/tag/v1.4.6",
+            "https://github.com/hoochmech/ettuningrustdesk/releases/download/v1.4.6/rustdesk.exe",
+            "https://github.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6?x=1",
+            "https://github.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6#asset",
+            "https://github.com/hoochmech/ettuningrustdesk/releases/tag/v1.4.6/extra",
+            "https://github.com/hoochmech/ettuningrustdesk/releases/tag/v1%2F4%2F6",
+            "https://github.com/hoochmech/ettuningrustdesk/releases/tag/%2e%2e",
         ] {
             assert!(release_id_from_update_url(update_url).is_err());
         }

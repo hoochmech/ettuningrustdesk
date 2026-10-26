@@ -66,6 +66,8 @@ jobs:
   #       args: --locked
 
   build:
+    # East Texas Tuning fork: upstream-only; et-tuning-windows.yml builds this fork.
+    if: github.repository == 'rustdesk/rustdesk'
     name: ${{ matrix.job.target }} (${{ matrix.job.os }})
     runs-on: ${{ matrix.job.os }}
     strategy:

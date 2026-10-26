@@ -24,6 +24,8 @@ concurrency:
 
 jobs:
   update:
+    # East Texas Tuning fork: upstream-only; et-tuning-windows.yml builds this fork.
+    if: github.repository == 'rustdesk/rustdesk'
     runs-on: ubuntu-latest
     permissions:
       contents: write
