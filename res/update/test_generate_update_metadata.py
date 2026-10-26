@@ -127,7 +127,7 @@ class GenerateUpdateMetadataTest(unittest.TestCase):
         key_bytes = base64.b64decode(public_key or self.public_key)
         source = self.root / "update_metadata.rs"
         source.write_text(
-            'TrustedUpdateKey { key_id: "2026-ed25519-main", public_key: ['
+            'TrustedUpdateKey { key_id: "ettuning-2026-ed25519", public_key: ['
             + ",".join(str(byte) for byte in key_bytes)
             + "] }",
             encoding="utf-8",

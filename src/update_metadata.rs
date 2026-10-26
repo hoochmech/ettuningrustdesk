@@ -27,12 +27,16 @@ const METADATA_SCHEMA_VERSION: u32 = 1;
 const SIGNATURE_SCHEMA_VERSION: u32 = 1;
 const SIGNATURE_ALGORITHM: &str = "ed25519";
 
+// East Texas Tuning release-signing key, made with res/et-tuning/new_update_key.py.
+// The matching private seed lives only in the repo's UPDATE_ED25519_SEED Actions
+// secret. PLACEHOLDER: no seed exists for this key yet, so releases fail to sign
+// until it is replaced with the real public key.
 const TRUSTED_UPDATE_KEYS: &[TrustedUpdateKey] = &[TrustedUpdateKey {
-    key_id: "2026-ed25519-main",
+    key_id: "ettuning-2026-ed25519",
     algorithm: SIGNATURE_ALGORITHM,
     public_key: [
-        118, 252, 116, 215, 49, 217, 220, 109, 145, 119, 210, 101, 225, 198, 63, 2, 41, 127, 197,
-        127, 52, 251, 6, 204, 125, 117, 96, 204, 187, 166, 85, 59,
+        115, 125, 139, 146, 240, 107, 201, 177, 160, 174, 97, 80, 75, 17, 227, 91, 178, 238, 199,
+        215, 43, 116, 107, 2, 75, 37, 117, 233, 124, 235, 185, 66,
     ],
 }];
 

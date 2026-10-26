@@ -11,6 +11,8 @@ on:
 
 jobs:
   run-flutter-tag-build:
+    # East Texas Tuning fork: upstream-only; et-tuning-windows.yml builds this fork.
+    if: github.repository == 'rustdesk/rustdesk'
     uses: ./.github/workflows/flutter-build.yml
     secrets: inherit
     with:
