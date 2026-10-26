@@ -16,7 +16,43 @@ the GitHub releases page.
 
 ## 1. Deploy with Firebase Hosting (free, part of your Google Cloud project)
 
-On your own computer, with Node.js installed:
+### Automatic deploys from GitHub (recommended)
+
+`.github/workflows/deploy-download-page.yml` deploys this folder whenever a change to it lands on
+master. It can also be run by hand from the repo's **Actions** tab ("Deploy download page" ->
+"Run workflow"). GitHub signs in to Google Cloud with Workload Identity Federation, so no service
+account key is created or stored. Only this repo's `master` branch is allowed to sign in.
+
+One-time setup:
+
+1. In Cloud Shell (the `>_` button at the top of the Google Cloud console), run:
+
+   ```
+   curl -sL https://raw.githubusercontent.com/hoochmech/ettuningrustdesk/master/download-page/setup-gcloud.sh | bash
+   ```
+
+   It enables the APIs, adds Firebase, creates the `github-download-page` service account with
+   hosting deploy permissions, and sets up the GitHub identity pool. It is safe to run again. The
+   project ID defaults to `rustdesk-api-482222`; pass another as `| bash -s <project-id>`.
+   If adding Firebase fails, accept the Firebase terms once at <https://console.firebase.google.com>
+   and run it again.
+2. On GitHub, open the repo -> **Settings** -> **Secrets and variables** -> **Actions** ->
+   **Variables** tab and add the three repository variables the script prints:
+   `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` and `FIREBASE_PROJECT_ID`.
+3. Actions tab -> "Deploy download page" -> **Run workflow** for the first deploy.
+
+Until `FIREBASE_PROJECT_ID` is set, the workflow skips itself instead of failing.
+
+### Deploying by hand
+
+On Windows, run the script in this folder. It installs the Firebase CLI if needed, signs you in,
+and deploys:
+
+```
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -ProjectId <your-project-id>
+```
+
+Or by hand, on any computer with Node.js installed:
 
 ```
 npm install -g firebase-tools
