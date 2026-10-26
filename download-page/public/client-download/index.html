@@ -68,7 +68,7 @@
   </div>
 
   <section class="card download">
-    <a id="dl-msi" class="btn" href="https://github.com/hoochmech/ettuningrustdesk/releases/latest">Download for Windows</a>
+    <a id="dl-msi" class="btn" href="/client-download/ETTuningRemote.msi" download>Download for Windows</a>
     <p class="meta" id="dl-meta">Windows 10 or 11, 64-bit</p>
   </section>
 
@@ -86,17 +86,16 @@
 </main>
 <script>
   document.getElementById("year").textContent = new Date().getFullYear();
-  fetch("https://api.github.com/repos/hoochmech/ettuningrustdesk/releases/latest")
+  fetch("/client-download/version.json", { cache: "no-store" })
     .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
-    .then(function (rel) {
-      var assets = rel.assets || [];
-      var msi = assets.find(function (a) { return /-x86_64\.msi$/i.test(a.name); });
-      var version = (rel.tag_name || "").replace(/^v/, "");
-      if (!msi) return;
-      document.getElementById("dl-msi").href = msi.browser_download_url;
-      document.getElementById("dl-meta").textContent = "Version " + version + " · " + Math.round(msi.size / 1048576) + " MB · Windows 10 or 11, 64-bit";
+    .then(function (v) {
+      document.getElementById("dl-meta").textContent = "Version " + v.version + " · " + Math.round(v.size / 1048576) + " MB · Windows 10 or 11, 64-bit";
     })
-    .catch(function () {});
+    .catch(function () {
+      var btn = document.getElementById("dl-msi");
+      btn.removeAttribute("href");
+      btn.textContent = "Download coming soon";
+    });
 </script>
 </body>
 </html>

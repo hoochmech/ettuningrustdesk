@@ -9,10 +9,15 @@ download-page/
   public/client-download/logo.jpg
 ```
 
-The download button looks up the newest GitHub release of hoochmech/ettuningrustdesk each time the
-page loads and links the `ETTuningRemote-<version>-x86_64.msi` installer.
-New client versions need no page change. Until the first release is tagged, the button opens
-the GitHub releases page.
+The download button links straight to `ettuning.net/client-download/ETTuningRemote.msi`, served by
+Firebase from the same site, with no hop through GitHub. Each deploy copies the MSI from the newest
+GitHub release into the site and writes `version.json`, which the page uses to show the version and
+size. The deploy runs again whenever the "ET Tuning Windows build" workflow finishes, so a new
+release goes live on the page on its own. Until a release with an MSI exists, the button reads
+"Download coming soon".
+
+Firebase's free Spark plan includes 360 MB of downloads a day, roughly 10 installer downloads.
+Above that, switch the project to the pay-as-you-go Blaze plan (about $0.15 per GB).
 
 ## 1. Deploy with Firebase Hosting (free, part of your Google Cloud project)
 

@@ -4,6 +4,20 @@
     "cleanUrls": true,
     "redirects": [
       { "source": "/", "destination": "/client-download/", "type": 302 }
+    ],
+    "headers": [
+      {
+        "source": "/client-download/ETTuningRemote.msi",
+        "headers": [
+          { "key": "Content-Type", "value": "application/x-msi" },
+          { "key": "Content-Disposition", "value": "attachment; filename=\"ETTuningRemote.msi\"" },
+          { "key": "Cache-Control", "value": "no-cache" }
+        ]
+      },
+      {
+        "source": "/client-download/version.json",
+        "headers": [{ "key": "Cache-Control", "value": "no-cache" }]
+      }
     ]
   }
 }

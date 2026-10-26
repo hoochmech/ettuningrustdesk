@@ -11,6 +11,11 @@ on:
       - "download-page/**"
       - ".github/workflows/deploy-download-page.yml"
   workflow_dispatch:
+  # Releases are published by the build workflow with GITHUB_TOKEN, which does
+  # not fire release events, so redeploy when that workflow finishes instead.
+  workflow_run:
+    workflows: ["ET Tuning Windows build"]
+    types: [completed]
 
 permissions:
   contents: read
@@ -22,7 +27,7 @@ concurrency:
 
 jobs:
   deploy:
-    if: vars.FIREBASE_PROJECT_ID != ''
+    if: vars.FIREBASE_PROJECT_ID != '' && (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
@@ -33,6 +38,20 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
         with:
           node-version: 22
+      - name: Add the latest release's MSI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          dir=download-page/public/client-download
+          if gh release download --repo "$GITHUB_REPOSITORY" --pattern '*-x86_64.msi' --dir msi; then
+            src=$(ls msi/*.msi | head -n 1)
+            version=$(basename "$src" | sed -E 's/^ETTuningRemote-(.+)-x86_64\.msi$/\1/')
+            mv "$src" "$dir/ETTuningRemote.msi"
+            printf '{"version":"%s","size":%s}\n' "$version" "$(stat -c %s "$dir/ETTuningRemote.msi")" > "$dir/version.json"
+            cat "$dir/version.json"
+          else
+            echo "::notice::No release with an MSI yet; the page will show 'Download coming soon'."
+          fi
       - name: Deploy
         working-directory: download-page
         run: npx --yes firebase-tools@15 deploy --only hosting --project "${{ vars.FIREBASE_PROJECT_ID }}" --non-interactive
