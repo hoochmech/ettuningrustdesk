@@ -4,9 +4,10 @@ name: ET Tuning Windows build
 #
 # - Pull requests and manual runs: build and run the Rust tests, and keep the
 #   installers as workflow artifacts.
-# - A tag like v1.5.2 (matching the version in Cargo.toml): also publish a GitHub
-#   Release with the installers and the signed update metadata. Installed clients
-#   find new versions through that release.
+# - A tag like v1.5.2 (matching the version in Cargo.toml), or a manual run with
+#   "release" checked: also publish a GitHub Release, tagged v<Cargo.toml version>,
+#   with the installers and the signed update metadata. Installed clients find new
+#   versions through that release.
 #
 # Secrets (Settings > Secrets and variables > Actions):
 # - UPDATE_ED25519_SEED (required for tag releases): signs the update metadata.
@@ -17,6 +18,11 @@ name: ET Tuning Windows build
 
 on:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Publish a release tagged v<Cargo.toml version> from this commit"
+        type: boolean
+        default: false
   pull_request:
     paths-ignore:
       - "docs/**"
@@ -34,7 +40,7 @@ env:
   VCPKG_BINARY_SOURCES: "clear;x-gha,readwrite"
   APP_NAME: "ETTuningRemote"
   MANUFACTURER: "East Texas Tuning"
-  IS_RELEASE: ${{ startsWith(github.ref, 'refs/tags/v') }}
+  IS_TAG: ${{ startsWith(github.ref, 'refs/tags/v') }}
 
 jobs:
   generate-bridge:
@@ -71,7 +77,7 @@ jobs:
         run: |
           VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
           echo "VERSION=$VERSION" >> "$GITHUB_ENV"
-          if [ "$IS_RELEASE" = "true" ] && [ "${GITHUB_REF_NAME}" != "v$VERSION" ]; then
+          if [ "$IS_TAG" = "true" ] && [ "${GITHUB_REF_NAME}" != "v$VERSION" ]; then
             echo "::error::Tag ${GITHUB_REF_NAME} does not match Cargo.toml version $VERSION"
             exit 1
           fi
@@ -235,20 +241,29 @@ jobs:
 
   publish-release:
     needs: [build-windows]
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') || inputs.release
     runs-on: ubuntu-22.04
     concurrency:
-      group: release-${{ github.ref_name }}
+      group: release
       cancel-in-progress: false
     permissions:
       contents: write
-    env:
-      TAG_NAME: ${{ github.ref_name }}
     steps:
       - name: Checkout source code
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
           persist-credentials: false
+
+      - name: Pick release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG_NAME="v$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)"
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release $TAG_NAME already exists; bump the version in Cargo.toml first."
+            exit 1
+          fi
+          echo "TAG_NAME=$TAG_NAME" >> "$GITHUB_ENV"
 
       - name: Install Python
         uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
@@ -307,7 +322,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft \
+          gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --target "$GITHUB_SHA" \
             --title "ET Tuning Remote Client ${TAG_NAME}" --generate-notes \
             ./artifacts/* ./rustdesk-update.json.sig ./rustdesk-update.json
           gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft=false --latest
