@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Download ET Tuning Remote</title>
+<meta name="description" content="Download the East Texas Tuning remote support client for Windows.">
+<link rel="icon" href="/client-download/logo.jpg">
+<style>
+  :root {
+    --bg: #000;
+    --panel: #151517;
+    --line: #2a2a2e;
+    --text: #f2f2f2;
+    --muted: #a3a3ab;
+    --red: #b3121b;
+    --red-hover: #d0161f;
+    --gold: #e4c27a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 760px; margin: 0 auto; padding: 32px 16px 48px; }
+  .hero { text-align: center; }
+  .hero img { width: 100%; max-width: 420px; height: auto; }
+  h1 { font-size: 1.9rem; margin: 8px 0 4px; letter-spacing: .01em; }
+  .tag { color: var(--muted); margin: 0 0 28px; }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .download { text-align: center; }
+  .btn {
+    display: inline-block;
+    background: var(--red);
+    color: #fff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 1.15rem;
+    padding: 14px 28px;
+    border-radius: 8px;
+    border-bottom: 3px solid var(--gold);
+  }
+  .btn:hover, .btn:focus-visible { background: var(--red-hover); }
+  .meta { color: var(--muted); font-size: .9rem; margin: 12px 0 0; }
+  .meta a { color: var(--gold); }
+  h2 { font-size: 1.2rem; margin: 0 0 12px; color: var(--gold); }
+  ol { margin: 0; padding-left: 1.3em; }
+  li { margin-bottom: 10px; }
+  li:last-child { margin-bottom: 0; }
+  .note { color: var(--muted); font-size: .92rem; }
+  footer { text-align: center; color: var(--muted); font-size: .85rem; margin-top: 28px; }
+</style>
+</head>
+<body>
+<main>
+  <div class="hero">
+    <img src="/client-download/logo.jpg" alt="East Texas Tuning" width="660" height="424">
+    <h1>ET Tuning Remote</h1>
+    <p class="tag">Remote support client for East Texas Tuning customers</p>
+  </div>
+
+  <section class="card download">
+    <a id="dl-msi" class="btn" href="https://github.com/hoochmech/ettuningrustdesk/releases/latest">Download for Windows</a>
+    <p class="meta" id="dl-meta">Windows 10 or 11, 64-bit</p>
+  </section>
+
+  <section class="card">
+    <h2>How to install</h2>
+    <ol>
+      <li>Click <strong>Download for Windows</strong> and open the file once it finishes downloading.</li>
+      <li>If Windows shows a "Windows protected your PC" message, click <strong>More info</strong>, then <strong>Run anyway</strong>.</li>
+      <li>Follow the installer, click <strong>Install</strong>, and accept the prompt asking to allow changes to your device.</li>
+      <li>Open <strong>ET Tuning Remote</strong> and read your <strong>ID</strong> and <strong>password</strong> to your East Texas Tuning technician so they can connect.</li>
+    </ol>
+  </section>
+
+  <footer>&copy; <span id="year">2026</span> East Texas Tuning</footer>
+</main>
+<script>
+  document.getElementById("year").textContent = new Date().getFullYear();
+  fetch("https://api.github.com/repos/hoochmech/ettuningrustdesk/releases/latest")
+    .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); })
+    .then(function (rel) {
+      var assets = rel.assets || [];
+      var msi = assets.find(function (a) { return /-x86_64\.msi$/i.test(a.name); });
+      var version = (rel.tag_name || "").replace(/^v/, "");
+      if (!msi) return;
+      document.getElementById("dl-msi").href = msi.browser_download_url;
+      document.getElementById("dl-meta").textContent = "Version " + version + " · " + Math.round(msi.size / 1048576) + " MB · Windows 10 or 11, 64-bit";
+    })
+    .catch(function () {});
+</script>
+</body>
+</html>
