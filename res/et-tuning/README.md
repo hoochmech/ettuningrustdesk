@@ -24,8 +24,9 @@ To change the logo, replace `res/et-tuning/logo-source.jpg` and run
 
 1. Bump `version` in `Cargo.toml` and `flutter/pubspec.yaml` (for example 1.5.1 to 1.5.2).
    The version must always go up, or installed clients will not see the update.
-2. Merge to `master`, then tag that commit and push the tag:
-   `git tag v1.5.2 && git push origin v1.5.2`
+2. Merge to `master`, then either push a tag (`git tag v1.5.2 && git push origin v1.5.2`)
+   or open Actions > "ET Tuning Windows build" > Run workflow on `master` with
+   "release" checked, which creates the tag itself.
 3. The workflow builds the installers, signs the update metadata with the
    `UPDATE_ED25519_SEED` secret, and publishes a GitHub Release.
 4. Installed clients check the latest release on startup and offer the update.
