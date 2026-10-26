@@ -24,8 +24,14 @@ master. It can also be run by hand from the repo's **Actions** tab ("Deploy down
 
 1. Add Firebase to the Google Cloud project, if you haven't: <https://console.firebase.google.com>
    -> **Add project** -> pick your existing Google Cloud project.
-2. In Cloud Shell (the `>_` button at the top of the Google Cloud console), create a deploy-only
-   service account and a key:
+2. In Cloud Shell (the `>_` button at the top of the Google Cloud console), run `setup-gcloud.sh`
+   from this folder. It does steps 1 and 2 and prints the key for step 3:
+
+   ```
+   curl -sL https://raw.githubusercontent.com/hoochmech/ettuningrustdesk/master/download-page/setup-gcloud.sh | bash
+   ```
+
+   Or create the deploy-only service account and key by hand:
 
    ```
    gcloud iam service-accounts create github-download-page --project <project-id> --display-name "GitHub download page deploy"
