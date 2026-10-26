@@ -20,35 +20,26 @@ the GitHub releases page.
 
 `.github/workflows/deploy-download-page.yml` deploys this folder whenever a change to it lands on
 master. It can also be run by hand from the repo's **Actions** tab ("Deploy download page" ->
-"Run workflow"). One-time setup, replacing `<project-id>` with your Google Cloud project ID:
+"Run workflow"). GitHub signs in to Google Cloud with Workload Identity Federation, so no service
+account key is created or stored. Only this repo's `master` branch is allowed to sign in.
 
-1. Add Firebase to the Google Cloud project, if you haven't: <https://console.firebase.google.com>
-   -> **Add project** -> pick your existing Google Cloud project.
-2. In Cloud Shell (the `>_` button at the top of the Google Cloud console), run `setup-gcloud.sh`
-   from this folder. It does steps 1 and 2 and prints the key for step 3:
+One-time setup:
+
+1. In Cloud Shell (the `>_` button at the top of the Google Cloud console), run:
 
    ```
    curl -sL https://raw.githubusercontent.com/hoochmech/ettuningrustdesk/master/download-page/setup-gcloud.sh | bash
    ```
 
-   Or create the deploy-only service account and key by hand:
-
-   ```
-   gcloud iam service-accounts create github-download-page --project <project-id> --display-name "GitHub download page deploy"
-   for role in roles/firebasehosting.admin roles/serviceusage.apiKeysViewer roles/run.viewer; do
-     gcloud projects add-iam-policy-binding <project-id> --member "serviceAccount:github-download-page@<project-id>.iam.gserviceaccount.com" --role $role
-   done
-   gcloud iam service-accounts keys create key.json --iam-account github-download-page@<project-id>.iam.gserviceaccount.com
-   ```
-
-   If key creation is refused with a `constraints/iam.disableServiceAccountKeyCreation` error, your
-   organization blocks keys; an org admin has to allow it for this project.
-3. On GitHub, open the repo -> **Settings** -> **Secrets and variables** -> **Actions**:
-   - **Secrets** tab -> **New repository secret**: name `FIREBASE_SERVICE_ACCOUNT`, value = the
-     whole contents of `key.json`.
-   - **Variables** tab -> **New repository variable**: name `FIREBASE_PROJECT_ID`, value = `<project-id>`.
-4. Delete `key.json` from your computer or Cloud Shell.
-5. Actions tab -> "Deploy download page" -> **Run workflow** for the first deploy.
+   It enables the APIs, adds Firebase, creates the `github-download-page` service account with
+   hosting deploy permissions, and sets up the GitHub identity pool. It is safe to run again. The
+   project ID defaults to `rustdesk-api-482222`; pass another as `| bash -s <project-id>`.
+   If adding Firebase fails, accept the Firebase terms once at <https://console.firebase.google.com>
+   and run it again.
+2. On GitHub, open the repo -> **Settings** -> **Secrets and variables** -> **Actions** ->
+   **Variables** tab and add the three repository variables the script prints:
+   `GCP_WORKLOAD_IDENTITY_PROVIDER`, `GCP_SERVICE_ACCOUNT` and `FIREBASE_PROJECT_ID`.
+3. Actions tab -> "Deploy download page" -> **Run workflow** for the first deploy.
 
 Until `FIREBASE_PROJECT_ID` is set, the workflow skips itself instead of failing.
 

@@ -1,5 +1,6 @@
 # Deploys download-page/ to Firebase Hosting (ettuning.net/client-download).
-# One-time setup is in download-page/README.md. Until the FIREBASE_PROJECT_ID
+# Signs in to Google Cloud with Workload Identity Federation, so no key is stored.
+# One-time setup is download-page/setup-gcloud.sh. Until the FIREBASE_PROJECT_ID
 # repository variable is set, the job is skipped.
 name: Deploy download page
 
@@ -13,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  id-token: write
 
 concurrency:
   group: deploy-download-page
@@ -24,10 +26,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
-      - uses: FirebaseExtended/action-hosting-deploy@0cbcac4740c2bfb00d632f0b863b57713124eb5a # v0.9.0
+      - uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
-          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
-          channelId: live
-          entryPoint: download-page
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: 22
+      - name: Deploy
+        working-directory: download-page
+        run: npx --yes firebase-tools@15 deploy --only hosting --project "${{ vars.FIREBASE_PROJECT_ID }}" --non-interactive

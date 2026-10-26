@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # One-time Google Cloud setup for the download page's GitHub Actions deploy.
+# GitHub signs in with Workload Identity Federation, so no service account key is created.
 # Run in Cloud Shell. Safe to run again; finished steps are skipped.
 #   bash setup-gcloud.sh [project-id]
 set -uo pipefail
 
 PROJECT="${1:-rustdesk-api-482222}"
+REPO="hoochmech/ettuningrustdesk"
 SA_NAME="github-download-page"
 SA_EMAIL="$SA_NAME@$PROJECT.iam.gserviceaccount.com"
-KEY_FILE="$HOME/key.json"
+POOL="github"
+PROVIDER="ettuningrustdesk"
 FIREBASE_API="https://firebase.googleapis.com/v1beta1/projects/$PROJECT"
 
 ok()   { echo "  OK: $*"; }
@@ -18,7 +21,8 @@ gcloud config set project "$PROJECT" --quiet >/dev/null 2>&1 || fail "could not 
 ok "project selected"
 
 echo "== 2/5 Enabling APIs (can take a minute)"
-gcloud services enable firebase.googleapis.com firebasehosting.googleapis.com iam.googleapis.com --project "$PROJECT" \
+gcloud services enable firebase.googleapis.com firebasehosting.googleapis.com iam.googleapis.com \
+  iamcredentials.googleapis.com sts.googleapis.com --project "$PROJECT" \
   || fail "enabling APIs failed (see the error above)."
 ok "APIs enabled"
 
@@ -61,32 +65,49 @@ else
   sleep 10
   ok "service account created"
 fi
-for role in roles/firebasehosting.admin roles/serviceusage.apiKeysViewer roles/run.viewer; do
+for role in roles/firebasehosting.admin roles/serviceusage.apiKeysViewer roles/run.viewer \
+  roles/serviceusage.serviceUsageConsumer roles/serviceusage.serviceUsageViewer; do
   gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$SA_EMAIL" \
     --role "$role" --condition=None --quiet >/dev/null || fail "granting $role failed."
   ok "granted $role"
 done
 
-echo "== 5/5 Creating the key"
-created=""
-for _ in 1 2 3; do
-  if gcloud iam service-accounts keys create "$KEY_FILE" --iam-account "$SA_EMAIL" --project "$PROJECT"; then
-    created=1; break
-  fi
-  sleep 10
-done
-[ -n "$created" ] || fail "key creation failed. If the error mentions iam.disableServiceAccountKeyCreation, your organization blocks keys and an admin must allow it for this project."
-ok "key saved to $KEY_FILE"
+echo "== 5/5 Letting GitHub Actions sign in without a key"
+NUMBER=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)') || fail "could not read the project number."
+POOL_ID="projects/$NUMBER/locations/global/workloadIdentityPools/$POOL"
+if gcloud iam workload-identity-pools describe "$POOL" --location global --project "$PROJECT" >/dev/null 2>&1; then
+  ok "identity pool already exists"
+else
+  gcloud iam workload-identity-pools create "$POOL" --location global --project "$PROJECT" \
+    --display-name "GitHub Actions" || fail "creating the identity pool failed."
+  ok "identity pool created"
+fi
+if gcloud iam workload-identity-pools providers describe "$PROVIDER" --location global \
+    --workload-identity-pool "$POOL" --project "$PROJECT" >/dev/null 2>&1; then
+  ok "GitHub provider already exists"
+else
+  gcloud iam workload-identity-pools providers create-oidc "$PROVIDER" --location global \
+    --workload-identity-pool "$POOL" --project "$PROJECT" --display-name "ettuningrustdesk repo" \
+    --issuer-uri "https://token.actions.githubusercontent.com" \
+    --attribute-mapping "google.subject=assertion.sub,attribute.repository=assertion.repository,attribute.ref=assertion.ref" \
+    --attribute-condition "assertion.repository=='$REPO' && assertion.ref=='refs/heads/master'" \
+    || fail "creating the GitHub provider failed."
+  ok "GitHub provider created (only $REPO on master can sign in)"
+fi
+gcloud iam service-accounts add-iam-policy-binding "$SA_EMAIL" --project "$PROJECT" \
+  --role roles/iam.workloadIdentityUser --condition=None --quiet \
+  --member "principalSet://iam.googleapis.com/$POOL_ID/attribute.repository/$REPO" >/dev/null \
+  || fail "allowing the repo to use the service account failed."
+ok "repo allowed to deploy as $SA_EMAIL"
 
 cat <<EOF
 
-All done. Now in GitHub (repo -> Settings -> Secrets and variables -> Actions):
-  1. Secrets tab   -> New repository secret   FIREBASE_SERVICE_ACCOUNT = the text printed below
-  2. Variables tab -> New repository variable FIREBASE_PROJECT_ID      = $PROJECT
-Then delete the key:  rm $KEY_FILE
+All done. Now in GitHub: repo -> Settings -> Secrets and variables -> Actions -> Variables tab.
+Add these three repository variables (no secrets needed):
 
------ copy everything between the lines -----
+  GCP_WORKLOAD_IDENTITY_PROVIDER = $POOL_ID/providers/$PROVIDER
+  GCP_SERVICE_ACCOUNT            = $SA_EMAIL
+  FIREBASE_PROJECT_ID            = $PROJECT
+
+Then Actions tab -> "Deploy download page" -> Run workflow.
 EOF
-cat "$KEY_FILE"
-echo
-echo "----- end -----"
