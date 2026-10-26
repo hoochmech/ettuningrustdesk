@@ -16,7 +16,14 @@ the GitHub releases page.
 
 ## 1. Deploy with Firebase Hosting (free, part of your Google Cloud project)
 
-On your own computer, with Node.js installed:
+On Windows, run the script in this folder. It installs the Firebase CLI if needed, signs you in,
+and deploys:
+
+```
+powershell -ExecutionPolicy Bypass -File .\deploy.ps1 -ProjectId <your-project-id>
+```
+
+Or by hand, on any computer with Node.js installed:
 
 ```
 npm install -g firebase-tools
