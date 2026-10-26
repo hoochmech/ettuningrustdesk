@@ -1,0 +1,33 @@
+# Deploys download-page/ to Firebase Hosting (ettuning.net/client-download).
+# One-time setup is in download-page/README.md. Until the FIREBASE_PROJECT_ID
+# repository variable is set, the job is skipped.
+name: Deploy download page
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "download-page/**"
+      - ".github/workflows/deploy-download-page.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-download-page
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: vars.FIREBASE_PROJECT_ID != ''
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: FirebaseExtended/action-hosting-deploy@0cbcac4740c2bfb00d632f0b863b57713124eb5a # v0.9.0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ vars.FIREBASE_PROJECT_ID }}
+          channelId: live
+          entryPoint: download-page
