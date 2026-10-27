@@ -41,15 +41,18 @@ if (-not (Test-Path "${env:ProgramFiles(x86)}\WinFsp\bin\winfsp-x64.dll")) {
     if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "Navimatics") {
         throw "WinFsp installer signature is not valid: $($sig.Status)"
     }
-    $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /norestart" -Wait -PassThru
-    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "WinFsp install failed: $($p.ExitCode)" }
+    $log = Join-Path $env:TEMP "winfsp-install.log"
+    $p = Start-Process msiexec -ArgumentList "/i `"$msi`" /qn /norestart /l*v `"$log`"" -Wait -PassThru
+    if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) { throw "WinFsp install failed: $($p.ExitCode). Details: $log" }
 }
 
 Write-Host "Downloading rclone $RcloneVersion..."
 $zipName = "rclone-$RcloneVersion-windows-amd64.zip"
 $zip = Join-Path $tmp $zipName
 Invoke-WebRequest -Uri "https://downloads.rclone.org/$RcloneVersion/$zipName" -OutFile $zip
-$sums = (Invoke-WebRequest -Uri "https://downloads.rclone.org/$RcloneVersion/SHA256SUMS" -UseBasicParsing).Content
+$sumsFile = Join-Path $tmp "SHA256SUMS"
+Invoke-WebRequest -Uri "https://downloads.rclone.org/$RcloneVersion/SHA256SUMS" -OutFile $sumsFile
+$sums = Get-Content $sumsFile -Raw
 $expected = [regex]::Match($sums, "(?m)^([0-9a-f]{64})\s+$([regex]::Escape($zipName))\s*$").Groups[1].Value
 $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
 if (-not $expected -or $expected -ne $actual) { throw "rclone download is corrupt or tampered with." }
