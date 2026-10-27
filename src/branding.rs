@@ -25,6 +25,11 @@ pub const SERVER_PUB_KEY: &str = "vt/KXmMLybFz/PZYJcMkGWXX95jNRr5oA44CPQGTB+c=";
 pub const UPDATE_REPO_OWNER: &str = "hoochmech";
 pub const UPDATE_REPO_NAME: &str = "ettuningrustdesk";
 
+/// Cloud Storage bucket behind the X: drive (see `src/xdrive.rs`). Empty turns it off.
+pub const XDRIVE_BUCKET: &str = "ettuning-fileshare-files";
+/// Service account whose short-lived tokens customers mount the X: drive with.
+pub const XDRIVE_CUSTOMER_ACCOUNT: &str = "xdrive-customer";
+
 pub fn releases_url() -> String {
     format!("https://github.com/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases")
 }

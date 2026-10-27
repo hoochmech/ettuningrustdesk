@@ -160,6 +160,28 @@ jobs:
           Remove-Item -Path "usbmmidd_v2\deviceinstaller64.exe", "usbmmidd_v2\deviceinstaller.exe", "usbmmidd_v2\usbmmidd.bat"
           mv -Force .\usbmmidd_v2 ./rustdesk
 
+      # The X: drive (src/xdrive.rs) runs rclone, which needs the WinFsp driver.
+      - name: Bundle rclone and WinFsp
+        shell: pwsh
+        env:
+          RCLONE_VERSION: "v1.69.1"
+          WINFSP_URL: "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
+        run: |
+          New-Item -ItemType Directory -Force -Path ./rustdesk/xdrive | Out-Null
+          $zip = "rclone-$env:RCLONE_VERSION-windows-amd64.zip"
+          Invoke-WebRequest -Uri "https://downloads.rclone.org/$env:RCLONE_VERSION/$zip" -OutFile $zip
+          Invoke-WebRequest -Uri "https://downloads.rclone.org/$env:RCLONE_VERSION/SHA256SUMS" -OutFile rclone-sums.txt
+          $expected = (Select-String -Path rclone-sums.txt -Pattern "^([0-9a-f]{64})\s+$([regex]::Escape($zip))$").Matches[0].Groups[1].Value
+          $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
+          if (-not $expected -or $expected -ne $actual) { throw "rclone checksum mismatch: '$expected' vs '$actual'" }
+          Expand-Archive $zip -DestinationPath rclone-unzip
+          Copy-Item rclone-unzip/*/rclone.exe ./rustdesk/xdrive/rclone.exe
+          Invoke-WebRequest -Uri $env:WINFSP_URL -OutFile ./rustdesk/xdrive/winfsp.msi
+          $sig = Get-AuthenticodeSignature ./rustdesk/xdrive/winfsp.msi
+          if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "Navimatics") {
+            throw "WinFsp MSI signature: $($sig.Status) $($sig.SignerCertificate.Subject)"
+          }
+
       - name: Run the Rust tests
         shell: bash
         run: |

@@ -36,6 +36,25 @@ A release is published only after every file is uploaded, so clients never see a
 half-finished release. Never delete or re-upload files on a published release; ship
 a new version instead.
 
+## X: drive
+
+During a full control session, the customer's PC gets an X: drive backed by the Cloud
+Storage bucket `ettuning-fileshare-files` (`XDRIVE_BUCKET` in `src/branding.rs`).
+Customers can read everything and add new files under `Uploads\`; they cannot change
+or delete anything. The drive unmounts when the session ends. The code is `src/xdrive.rs`.
+
+- The technician PC needs the `xdrive-tech` key at
+  `C:\ProgramData\ETTuning\xdrive-tech-key.json`. With it, the client gives each
+  customer a 15 minute token, renewed every 10 minutes. Without it, no X: drive is offered.
+- `res/et-tuning/xdrive-tech-setup.ps1` gives the technician PC its own permanent,
+  read-write X: drive.
+- The installer carries `xdrive\rclone.exe` and `xdrive\winfsp.msi`. WinFsp is installed
+  on the customer's PC the first time a drive is mounted, which needs the client to be
+  installed (not run portable).
+- Known limits: a file copied into `Uploads\` in the last moment before the session ends
+  may not finish uploading. Writing outside `Uploads\` appears to work at first and then
+  fails, because the drive is only read-only on the server side.
+
 ## Repository secrets
 
 - `UPDATE_ED25519_SEED` (required to release): private key for update metadata.
