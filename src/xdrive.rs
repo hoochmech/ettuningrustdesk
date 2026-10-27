@@ -68,12 +68,14 @@ pub fn start_sending(
     peer_platform_additions: &str,
     sender: tokio::sync::mpsc::UnboundedSender<Data>,
 ) -> Option<TokenSender> {
-    if branding::XDRIVE_BUCKET.is_empty()
-        || !peer_supports(peer_platform_additions)
-        || !std::path::Path::new(TECH_KEY_FILE).exists()
-    {
+    if branding::XDRIVE_BUCKET.is_empty() || !peer_supports(peer_platform_additions) {
         return None;
     }
+    if !std::path::Path::new(TECH_KEY_FILE).exists() {
+        log::info!("X: drive: no technician key at {TECH_KEY_FILE}");
+        return None;
+    }
+    log::info!("X: drive: sending tokens to this peer");
     Some(TokenSender(tokio::spawn(async move {
         loop {
             match tokio::task::spawn_blocking(mint_customer_token).await {
@@ -227,6 +229,7 @@ pub fn on_token(conn_id: i32, token: EtDriveToken) {
         log::warn!("X: drive: rclone exited, mounting again");
         m.unmount();
     }
+    log::info!("X: drive: mounting for connection {conn_id}");
     state.mounting = true;
     std::thread::spawn(mount_thread);
 }
