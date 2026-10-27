@@ -103,6 +103,8 @@ pub struct Remote<T: InvokeUiSession> {
     last_record_state: bool,
     sent_close_reason: bool,
     cursor_dedupe: CursorDedupe,
+    #[cfg(windows)]
+    xdrive_tokens: Option<crate::xdrive::TokenSender>,
 }
 
 #[derive(Default)]
@@ -156,6 +158,8 @@ impl<T: InvokeUiSession> Remote<T> {
             last_record_state: false,
             sent_close_reason: false,
             cursor_dedupe: Default::default(),
+            #[cfg(windows)]
+            xdrive_tokens: None,
         }
     }
 
@@ -1615,6 +1619,13 @@ impl<T: InvokeUiSession> Remote<T> {
                                 self.handler.lc.write().unwrap().handle_peer_info(&pi);
                                 return false;
                             }
+                        }
+                        #[cfg(windows)]
+                        if self.handler.is_default() {
+                            self.xdrive_tokens = crate::xdrive::start_sending(
+                                &pi.platform_additions,
+                                self.sender.clone(),
+                            );
                         }
                         self.handler.handle_peer_info(pi);
                         #[cfg(all(target_os = "windows", not(feature = "flutter")))]

@@ -867,7 +867,16 @@ message Misc {
     // is rebuilt, and held again, the next time it is shown, before any connection names it
     // by id again, so the shape just selected is always there to give.
     uint64 request_cursor_data = 39;
+    // ET Tuning: mounts the X: drive on the controlled side for this session.
+    EtDriveToken et_drive_token = 1001;
   }
+}
+
+// A short-lived Cloud Storage access token, renewed by the controlling side
+// before it expires.
+message EtDriveToken {
+  string access_token = 1;
+  int64 expires_at = 2; // Unix seconds.
 }
 
 message VoiceCallRequest {

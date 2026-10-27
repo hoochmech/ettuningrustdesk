@@ -23,6 +23,8 @@ pub use self::rendezvous_mediator::*;
 pub mod branding;
 /// cbindgen:ignore
 pub mod common;
+#[cfg(windows)]
+mod xdrive;
 #[cfg(not(any(target_os = "ios")))]
 pub mod ipc;
 #[cfg(not(any(

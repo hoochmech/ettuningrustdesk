@@ -1983,6 +1983,7 @@ impl Connection {
                 "supported_privacy_mode_impl".into(),
                 json!(privacy_mode::get_supported_privacy_mode_impl()),
             );
+            crate::xdrive::add_platform_additions(&mut platform_additions);
         }
         #[cfg(target_os = "macos")]
         {
@@ -4064,6 +4065,12 @@ impl Connection {
                             if let Some(msg) = input_service::cursor_data_message(id) {
                                 self.send((*msg).clone()).await;
                             }
+                        }
+                    }
+                    #[cfg(windows)]
+                    Some(misc::Union::EtDriveToken(t)) => {
+                        if self.is_remote() && self.peer_keyboard_enabled() {
+                            crate::xdrive::on_token(self.inner.id(), t);
                         }
                     }
                     _ => {}
@@ -6720,6 +6727,8 @@ impl Default for PortableState {
 
 impl Drop for Connection {
     fn drop(&mut self) {
+        #[cfg(windows)]
+        crate::xdrive::on_conn_closed(self.inner.id());
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();
 
