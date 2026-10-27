@@ -33,7 +33,8 @@ pub fn latest_release_api_url() -> String {
     format!("https://api.github.com/repos/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases/latest")
 }
 
-/// Applies the app name and locks the server settings, before anything reads them.
+/// Applies the app name, locks the server settings and sets our install defaults,
+/// before anything reads them.
 pub fn apply() {
     *config::APP_NAME.write().unwrap() = APP_NAME.to_owned();
     let mut overwrite = config::OVERWRITE_SETTINGS.write().unwrap();
@@ -44,4 +45,10 @@ pub fn apply() {
     ] {
         overwrite.insert(k.to_owned(), v.to_owned());
     }
+    drop(overwrite);
+    // Defaults, not overrides: the PC's owner can still turn these off in settings.
+    config::DEFAULT_SETTINGS.write().unwrap().insert(
+        keys::OPTION_ALLOW_REMOTE_CONFIG_MODIFICATION.to_owned(),
+        "Y".to_owned(),
+    );
 }
