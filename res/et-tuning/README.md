@@ -29,8 +29,10 @@ To change the logo, replace `res/et-tuning/logo-source.jpg` and run
    "release" checked, which creates the tag itself.
 3. The workflow builds the installers, signs the update metadata with the
    `UPDATE_ED25519_SEED` secret, and publishes a GitHub Release.
-4. Installed clients check the latest release on startup and offer the update.
-   With "auto update" on, they install it themselves when no session is active.
+4. Updates are required. When the app starts and a newer release exists, it shows an
+   "Update required" dialog that cannot be dismissed. Separately, the background service
+   installs the update itself when no session is active (30 seconds after it starts,
+   then daily). Users cannot turn off the update check or auto update.
 
 A release is published only after every file is uploaded, so clients never see a
 half-finished release. Never delete or re-upload files on a published release; ship
