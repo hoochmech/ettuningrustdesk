@@ -183,7 +183,7 @@ function showView(name) {
 // ---------- needs details ----------
 VIEWS.queue = {
   shell: () => `<h1>Sessions that need details</h1>
-    <p class="muted small">Every remote session that a technician logged into shows up here when it ends. Fill in the job details, or dismiss it if it wasn't a job.</p>
+    <p class="muted small">Every remote session that a technician logged into shows up here when it ends. Fill in the job details, or choose "Don't log" for a session that shouldn't be recorded as a job.</p>
     <div id="vb"></div>`,
   body() {
     const vb = $("#vb");
@@ -201,7 +201,7 @@ VIEWS.queue = {
             <span class="muted">${esc(s.conn_type_name)}${s.technician_name ? ` by ${esc(s.technician_name)}` : ""}</span>
           </div>
           <span class="spacer"></span>
-          <button class="btn ghost small" data-dismiss="${s.id}">Not a job</button>
+          <button class="btn ghost small" data-dismiss="${s.id}">Don't log</button>
           <button class="btn small" data-open="${s.id}">Fill in details</button>
         </div>
       </div>`).join("");
@@ -210,9 +210,25 @@ VIEWS.queue = {
   },
 };
 
+// Keeps the session on record as "not logged" (Sessions tab, Status filter) but out of
+// the queue and out of job lists, along with any overlapping connections to the same
+// computer that the job form would have folded into it.
 async function dismissSession(id) {
-  if (!confirm("Mark this session as not a job? It will leave this list.")) return;
-  await db.doc(`sessions/${id}`).update({ status: "dismissed", completed_at: FieldValue.serverTimestamp(), completed_by: S.user.email });
+  if (!confirm("Don't log this session? It leaves this list and won't count as a job.")) return false;
+  const s = findSession(id);
+  const done = { status: "dismissed", completed_at: FieldValue.serverTimestamp(), completed_by: S.user.email };
+  const batch = db.batch();
+  batch.update(db.doc(`sessions/${id}`), done);
+  const start = (toDate(s?.started_at)?.getTime() ?? 0) - 60000;
+  const end = (toDate(s?.ended_at)?.getTime() ?? Date.now()) + 60000;
+  for (const o of S.queue) {
+    if (!s || o.id === id || o.rustdesk_id !== s.rustdesk_id) continue;
+    const os = toDate(o.started_at)?.getTime() ?? 0;
+    const oe = toDate(o.ended_at)?.getTime() ?? os;
+    if (os <= end && oe >= start) batch.update(db.doc(`sessions/${o.id}`), done);
+  }
+  await batch.commit();
+  return true;
 }
 
 // ---------- session form ----------
@@ -286,6 +302,7 @@ async function openSessionForm(id) {
       <label style="margin-top:12px">Notes<textarea name="notes">${esc(s.notes)}</textarea></label>
       <p class="err" id="sf-err"></p>
       <div class="row"><span class="spacer"></span>
+        ${s.status === "needs_details" ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
         <button type="button" class="btn ghost" id="sf-cancel">Cancel</button>
         <button class="btn" id="sf-save">Save job</button>
       </div>
@@ -375,6 +392,7 @@ async function openSessionForm(id) {
   search.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
 
   $("#sf-cancel").onclick = closeDialog;
+  if ($("#sf-skip")) $("#sf-skip").onclick = async () => { if (await dismissSession(s.id)) closeDialog(); };
   f.onsubmit = async (e) => {
     e.preventDefault();
     const err = $("#sf-err");
@@ -463,7 +481,7 @@ VIEWS.sessions = {
       <label>Billable<select id="fb">${options([{ value: "yes", label: "Billable" }, { value: "no", label: "Not billable" }], fl.billable, "All")}</select></label>
       <label>Status<select id="fs">${options([
         { value: "complete", label: "Completed jobs" }, { value: "needs_details", label: "Needs details" },
-        { value: "active", label: "In progress" }, { value: "dismissed", label: "Not a job" }, { value: "all", label: "Everything" },
+        { value: "active", label: "In progress" }, { value: "dismissed", label: "Not logged" }, { value: "all", label: "Everything" },
       ], fl.status)}</select></label>
     </div>
     <div id="vb"></div>`;

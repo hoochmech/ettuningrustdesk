@@ -28,6 +28,9 @@ The PC also posts its computer name, Windows user and OS to `/api/sysinfo`, whic
 fills in the `devices` list. Link a computer to a customer once (on the job form or
 the Computers tab) and its later sessions arrive with the customer filled in.
 
+A session that shouldn't be recorded as a job gets "Don't log" (in the queue or on the
+form). It's kept as `dismissed` and shows only under the Sessions tab's "Not logged" filter.
+
 A file transfer or terminal window is a separate connection. When a job is saved,
 other waiting connections on the same computer that overlap it (within a minute) are
 folded into it.
