@@ -167,16 +167,23 @@ jobs:
           RCLONE_VERSION: "v1.69.1"
           WINFSP_URL: "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
         run: |
+          function Get-File($Uri, $OutFile) {
+            for ($i = 1; ; $i++) {
+              try { Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 300; return }
+              catch { if ($i -ge 3) { throw }; Write-Host "Retrying $Uri ($_)"; Start-Sleep -Seconds 10 }
+            }
+          }
           New-Item -ItemType Directory -Force -Path ./rustdesk/xdrive | Out-Null
           $zip = "rclone-$env:RCLONE_VERSION-windows-amd64.zip"
-          Invoke-WebRequest -Uri "https://downloads.rclone.org/$env:RCLONE_VERSION/$zip" -OutFile $zip
-          Invoke-WebRequest -Uri "https://downloads.rclone.org/$env:RCLONE_VERSION/SHA256SUMS" -OutFile rclone-sums.txt
+          $rcloneBase = "https://github.com/rclone/rclone/releases/download/$env:RCLONE_VERSION"
+          Get-File "$rcloneBase/$zip" $zip
+          Get-File "$rcloneBase/SHA256SUMS" rclone-sums.txt
           $expected = (Select-String -Path rclone-sums.txt -Pattern "^([0-9a-f]{64})\s+$([regex]::Escape($zip))$").Matches[0].Groups[1].Value
           $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
           if (-not $expected -or $expected -ne $actual) { throw "rclone checksum mismatch: '$expected' vs '$actual'" }
           Expand-Archive $zip -DestinationPath rclone-unzip
           Copy-Item rclone-unzip/*/rclone.exe ./rustdesk/xdrive/rclone.exe
-          Invoke-WebRequest -Uri $env:WINFSP_URL -OutFile ./rustdesk/xdrive/winfsp.msi
+          Get-File $env:WINFSP_URL ./rustdesk/xdrive/winfsp.msi
           $sig = Get-AuthenticodeSignature ./rustdesk/xdrive/winfsp.msi
           if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "Navimatics") {
             throw "WinFsp MSI signature: $($sig.Status) $($sig.SignerCertificate.Subject)"
