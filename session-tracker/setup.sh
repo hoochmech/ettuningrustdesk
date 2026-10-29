@@ -31,6 +31,12 @@ gcloud services enable firestore.googleapis.com cloudfunctions.googleapis.com ru
   storage.googleapis.com firebasehosting.googleapis.com identitytoolkit.googleapis.com \
   firebaserules.googleapis.com --project "$PROJECT" || fail "enabling APIs failed."
 ok "APIs enabled"
+# Newer projects build Cloud Functions as the default compute account, which starts
+# without the permissions a build needs.
+build_sa="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$build_sa" \
+  --role roles/cloudbuild.builds.builder --condition=None --quiet >/dev/null || fail "letting $build_sa build functions failed."
+ok "function builds allowed"
 
 echo "== 2/7 Firestore database"
 if gcloud firestore databases describe --database='(default)' --project "$PROJECT" >/dev/null 2>&1; then
