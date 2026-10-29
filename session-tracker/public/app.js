@@ -675,7 +675,7 @@ VIEWS.settings = {
       <p class="muted small">One per line.</p>
       <textarea id="vmakes" rows="6"></textarea></div>
     <div class="card"><div class="row"><h2>Engines</h2><span class="spacer"></span><button class="btn small" id="addmake">Add make</button></div>
-      <p class="muted small">One model per line, then a colon and its ECM types separated by commas, e.g. <code>6.7L (2019+): CM2350B</code>. The X: drive folder is where this make's tune files go, and the file ID prefix starts their IDs. Changing a prefix only affects files added afterwards.</p>
+      <p class="muted small">Each make lists its engine models, and each model its ECM types; the job form offers them in that order. Model and ECM changes save as you make them; Save stores the make's name, X: drive folder and file ID prefix. The folder is where this make's tune files go on the X: drive, and the prefix starts their IDs. Changing a prefix only affects files added afterwards.</p>
       <div id="makes"></div></div>`,
   bind() {
     $("#addcat").onclick = async () => {
@@ -708,30 +708,89 @@ VIEWS.settings = {
     if (document.activeElement !== vm) vm.value = S.vehicleMakes.join("\n");
 
     const makes = $("#makes");
-    // Don't redraw a make someone is typing in.
-    if (makes.contains(document.activeElement)) return;
+    // Don't redraw while someone is typing in one of the boxes.
+    if (document.activeElement?.tagName === "INPUT" && makes.contains(document.activeElement)) return;
     makes.innerHTML = S.engines.map((m) => `<div class="card" style="background:var(--panel2)">
         <div class="row"><label>Make<input data-mname="${m.id}" value="${esc(m.name)}"></label>
           <label>X: drive folder<input data-mfolder="${m.id}" value="${esc(m.folder ?? m.name)}"></label>
           <label style="max-width:120px">File ID prefix<input data-mprefix="${m.id}" value="${esc(m.file_prefix ?? "")}" maxlength="6"></label><span class="spacer"></span>
           <button class="btn ghost small" data-mdel="${m.id}">Delete make</button><button class="btn small" data-msave="${m.id}">Save</button></div>
-        <textarea data-mmodels="${m.id}" rows="${Math.max(3, (m.models || []).length + 1)}" style="margin-top:8px;font-family:ui-monospace,monospace">${esc((m.models || []).map((x) => `${x.name}: ${(x.ecms || []).join(", ")}`).join("\n"))}</textarea>
+        <table style="margin-top:8px"><tr><th style="width:34%">Engine model</th><th>ECM types</th><th></th></tr>
+        ${(m.models || []).map((x, i) => `<tr>
+          <td><input data-model="${m.id}:${i}" value="${esc(x.name)}"></td>
+          <td><div class="chips" style="margin:0 0 6px">${(x.ecms || []).map((e, j) => `<span class="chip">${esc(e)}<button type="button" data-ecmdel="${m.id}:${i}:${j}" title="Remove ${esc(e)}">×</button></span>`).join("") || `<span class="muted small">None yet</span>`}</div>
+            <div class="row"><input data-ecmnew="${m.id}:${i}" placeholder="New ECM type" style="max-width:200px"><button class="btn ghost small" data-ecmadd="${m.id}:${i}">Add ECM</button></div></td>
+          <td><button class="btn ghost small" data-modeldel="${m.id}:${i}">Remove model</button></td></tr>`).join("")}
+        <tr><td><input data-modelnew="${m.id}" placeholder="New engine model"></td><td colspan="2"><button class="btn ghost small" data-modeladd="${m.id}">Add model</button></td></tr>
+        </table>
       </div>`).join("") || `<p class="muted">No engines yet.</p>`;
+
+    const make = (id) => S.engines.find((x) => x.id === id);
+    const models = (id) => (make(id)?.models || []).map((x) => ({ name: x.name, ecms: [...(x.ecms || [])] }));
+    const save = async (id, list) => {
+      document.activeElement?.blur();
+      await db.doc(`engine_makes/${id}`).update({ models: list });
+      VIEWS.settings.body();
+    };
+    const parts = (v) => v.split(":").map((x, k) => (k ? Number(x) : x));
+    const onEnter = (input, button) => (input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); button.click(); } });
+
+    $$("[data-modeladd]", makes).forEach((b) => {
+      const id = b.dataset.modeladd;
+      const input = $(`[data-modelnew="${id}"]`, makes);
+      onEnter(input, b);
+      b.onclick = () => {
+        const name = input.value.trim();
+        if (!name) return;
+        const list = models(id);
+        if (list.some((x) => x.name === name)) return alert(`${name} is already listed.`);
+        save(id, [...list, { name, ecms: [] }]);
+      };
+    });
+    $$("[data-model]", makes).forEach((input) => (input.onchange = () => {
+      const [id, i] = parts(input.dataset.model);
+      const name = input.value.trim();
+      if (!name) return;
+      const list = models(id);
+      list[i].name = name;
+      save(id, list);
+    }));
+    $$("[data-modeldel]", makes).forEach((b) => (b.onclick = () => {
+      const [id, i] = parts(b.dataset.modeldel);
+      const list = models(id);
+      if (!confirm(`Remove ${list[i].name} and its ECM types? Jobs that already used it keep their values.`)) return;
+      list.splice(i, 1);
+      save(id, list);
+    }));
+    $$("[data-ecmadd]", makes).forEach((b) => {
+      const key = b.dataset.ecmadd;
+      const input = $(`[data-ecmnew="${key}"]`, makes);
+      onEnter(input, b);
+      b.onclick = () => {
+        const [id, i] = parts(key);
+        const ecm = input.value.trim();
+        if (!ecm) return;
+        const list = models(id);
+        if (list[i].ecms.includes(ecm)) return alert(`${ecm} is already listed.`);
+        list[i].ecms.push(ecm);
+        save(id, list);
+      };
+    });
+    $$("[data-ecmdel]", makes).forEach((b) => (b.onclick = () => {
+      const [id, i, j] = parts(b.dataset.ecmdel);
+      const list = models(id);
+      list[i].ecms.splice(j, 1);
+      save(id, list);
+    }));
     $$("[data-msave]", makes).forEach((b) => (b.onclick = async () => {
       const id = b.dataset.msave;
       const name = $(`[data-mname="${id}"]`, makes).value.trim();
-      const models = $(`[data-mmodels="${id}"]`, makes).value.split("\n").map((line) => {
-        const i = line.lastIndexOf(":");
-        const mname = (i >= 0 ? line.slice(0, i) : line).trim();
-        const ecms = i >= 0 ? line.slice(i + 1).split(",").map((x) => x.trim()).filter(Boolean) : [];
-        return { name: mname, ecms };
-      }).filter((x) => x.name);
       const folder = $(`[data-mfolder="${id}"]`, makes).value.trim() || name;
       const prefix = $(`[data-mprefix="${id}"]`, makes).value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (!name) return;
       if (prefix.length < 2) { alert("The file ID prefix needs 2 to 6 letters or numbers."); return; }
       if (S.engines.some((x) => x.id !== id && x.file_prefix === prefix)) { alert(`Another make already uses ${prefix}.`); return; }
-      await db.doc(`engine_makes/${id}`).set({ name, folder, file_prefix: prefix, models });
+      await db.doc(`engine_makes/${id}`).update({ name, folder, file_prefix: prefix });
       b.blur();
       VIEWS.settings.body();
     }));
