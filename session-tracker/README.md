@@ -36,8 +36,10 @@ closes either. Saved jobs can't be removed this way.
 
 The job form can also be filled in while the session is still going: "Fill in now"
 under "In progress" on the queue page, or the clipboard button ("Job form") in the
-client's remote toolbar, which opens the dashboard at `#device=<remote ID>`. A job saved
-early stays complete when the session closes.
+client's remote toolbar, which opens the dashboard at `#device=<remote ID>` with the form
+for that computer's latest session (still going, waiting for details, or already saved),
+so it can be opened and edited any number of times. Closing a logged-in remote desktop
+session opens the same form. A job saved early stays complete when the session closes.
 
 Vehicle make, engine make, engine model and ECM type lists end in "+ Add…" on the job
 form, which saves the new entry to the Lists tab and picks it. A make added this way

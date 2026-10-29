@@ -153,11 +153,15 @@ function onData() {
     const rid = pendingDeviceLink;
     pendingDeviceLink = null;
     history.replaceState(null, "", `#${S.view}`);
+    // The latest session on that computer, whether it is still going, just ended, or
+    // already has its details saved, so the form can be opened again at any point.
     // Asked of the server: the first S.sessions snapshot can come from the local cache.
-    db.collection("sessions").where("rustdesk_id", "==", rid).where("status", "==", "active").get().then((snap) => {
-      const live = snap.docs.sort((a, b) => (toDate(b.get("started_at")) || 0) - (toDate(a.get("started_at")) || 0))[0];
-      if (live) openSessionForm(live.id);
-      else alert(`No session is in progress on ${rid} yet. It shows up here a few seconds after you connect.`);
+    db.collection("sessions").where("rustdesk_id", "==", rid).where("status", "in", ["active", "needs_details", "complete"]).get().then((snap) => {
+      // A file transfer window is its own connection; the remote desktop one is the job.
+      const latest = snap.docs.sort((a, b) => (a.get("conn_type") === 0 ? 0 : 1) - (b.get("conn_type") === 0 ? 0 : 1) ||
+        (toDate(b.get("started_at")) || 0) - (toDate(a.get("started_at")) || 0))[0];
+      if (latest && Date.now() - (toDate(latest.get("started_at"))?.getTime() ?? 0) < 24 * 3600 * 1000) openSessionForm(latest.id);
+      else alert(`No session on ${rid} yet. It shows up here a few seconds after you connect.`);
     });
   }
   VIEWS[S.view].body();
