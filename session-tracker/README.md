@@ -29,7 +29,10 @@ fills in the `devices` list. Link a computer to a customer once (on the job form
 the Computers tab) and its later sessions arrive with the customer filled in.
 
 A session that shouldn't be recorded as a job gets "Don't log" (in the queue or on the
-form). It's kept as `dismissed` and shows only under the Sessions tab's "Not logged" filter.
+form). The session, its connection records and any overlapping connections it would
+have absorbed are deleted (through `/api/forget`, which checks the staff list), so no
+record is left. A session that is still open when it's removed leaves nothing when it
+closes either. Saved jobs can't be removed this way.
 
 The job form can also be filled in while the session is still going: "Fill in now"
 under "In progress" on the queue page, or the clipboard button ("Job form") in the

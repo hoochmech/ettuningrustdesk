@@ -149,13 +149,16 @@ function onData() {
     pendingDeepLink = null;
     openSessionForm(id);
   }
-  if (pendingDeviceLink && S.loaded.has("sessions")) {
+  if (pendingDeviceLink && ["customers", "categories", "engines", "vehicleMakes", "devices"].every((k) => S.loaded.has(k))) {
     const rid = pendingDeviceLink;
     pendingDeviceLink = null;
     history.replaceState(null, "", `#${S.view}`);
-    const live = S.sessions.find((s) => s.rustdesk_id === rid && s.status === "active");
-    if (live) openSessionForm(live.id);
-    else alert(`No session is in progress on ${rid} yet. It shows up here a few seconds after you connect.`);
+    // Asked of the server: the first S.sessions snapshot can come from the local cache.
+    db.collection("sessions").where("rustdesk_id", "==", rid).where("status", "==", "active").get().then((snap) => {
+      const live = snap.docs.sort((a, b) => (toDate(b.get("started_at")) || 0) - (toDate(a.get("started_at")) || 0))[0];
+      if (live) openSessionForm(live.id);
+      else alert(`No session is in progress on ${rid} yet. It shows up here a few seconds after you connect.`);
+    });
   }
   VIEWS[S.view].body();
 }
@@ -241,24 +244,29 @@ VIEWS.queue = {
   },
 };
 
-// Keeps the session on record as "not logged" (Sessions tab, Status filter) but out of
-// the queue and out of job lists, along with any overlapping connections to the same
-// computer that the job form would have folded into it.
+// Deletes the session and its connection records, along with any overlapping
+// connections to the same computer that the job form would have folded into it.
 async function dismissSession(id) {
-  if (!confirm("Don't log this session? It leaves this list and won't count as a job.")) return false;
+  if (!confirm("Don't log this session? It is deleted and leaves no record.")) return false;
   const s = findSession(id);
-  const done = { status: "dismissed", completed_at: FieldValue.serverTimestamp(), completed_by: S.user.email };
-  const batch = db.batch();
-  batch.update(db.doc(`sessions/${id}`), done);
+  const ids = [id];
   const start = (toDate(s?.started_at)?.getTime() ?? 0) - 60000;
   const end = (toDate(s?.ended_at)?.getTime() ?? Date.now()) + 60000;
   for (const o of S.queue) {
     if (!s || o.id === id || o.rustdesk_id !== s.rustdesk_id) continue;
     const os = toDate(o.started_at)?.getTime() ?? 0;
     const oe = toDate(o.ended_at)?.getTime() ?? os;
-    if (os <= end && oe >= start) batch.update(db.doc(`sessions/${o.id}`), done);
+    if (os <= end && oe >= start) ids.push(o.id);
   }
-  await batch.commit();
+  const res = await fetch("/api/forget", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${await S.user.getIdToken()}` },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    alert(`The session could not be removed (${res.status}). Try again.`);
+    return false;
+  }
   return true;
 }
 
@@ -612,7 +620,7 @@ VIEWS.sessions = {
       <label>Billable<select id="fb">${options([{ value: "yes", label: "Billable" }, { value: "no", label: "Not billable" }], fl.billable, "All")}</select></label>
       <label>Status<select id="fs">${options([
         { value: "complete", label: "Completed jobs" }, { value: "needs_details", label: "Needs details" },
-        { value: "active", label: "In progress" }, { value: "dismissed", label: "Not logged" }, { value: "all", label: "Everything" },
+        { value: "active", label: "In progress" }, { value: "all", label: "Everything" },
       ], fl.status)}</select></label>
     </div>
     <div id="vb"></div>`;

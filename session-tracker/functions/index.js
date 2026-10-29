@@ -7,6 +7,8 @@ const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { BadRequest, parseConnEvent, applyConnEvent, parseSysinfo } = require("./events");
+const { getAuth } = require("firebase-admin/auth");
+const { forgetSessions } = require("./forget");
 
 initializeApp();
 const db = getFirestore();
@@ -23,6 +25,8 @@ exports.api = onRequest(
       if (req.path === "/api/audit/conn") {
         await handleConn(body);
         res.status(200).send("");
+      } else if (req.path === "/api/forget") {
+        res.status(200).json({ removed: await handleForget(req, body) });
       } else if (req.path === "/api/sysinfo") {
         await handleSysinfo(body);
         // Tells the client to stop re-sending until its sysinfo changes.
@@ -70,7 +74,9 @@ async function handleConn(body) {
     const customerId = deviceSnap.exists ? deviceSnap.get("customer_id") || null : null;
     const out = applyConnEvent(open, ev, now, customerId);
 
-    tx.create(eventRef, { ...body, kind: ev.kind, received_at: now });
+    // An event that changes no session (such as the close of one removed with "Don't
+    // log") leaves nothing behind.
+    if (out.session || out.stale) tx.create(eventRef, { ...body, kind: ev.kind, received_at: now });
     tx.set(
       deviceRef,
       deviceSnap.exists
@@ -86,6 +92,20 @@ async function handleConn(body) {
     }
     if (out.open === "delete") tx.delete(openRef);
   });
+}
+
+// Called by the dashboard with the signed-in staff member's ID token.
+async function handleForget(req, body) {
+  const token = (req.get("authorization") || "").replace(/^Bearer /, "");
+  let user;
+  try {
+    user = await getAuth().verifyIdToken(token);
+  } catch {
+    throw new BadRequest("not signed in");
+  }
+  if (!user.email_verified || !(await db.doc(`staff/${user.email}`).get()).exists) throw new BadRequest("not staff");
+  const ids = Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : [];
+  return forgetSessions(db, ids);
 }
 
 async function handleSysinfo(body) {

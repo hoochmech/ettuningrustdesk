@@ -5,7 +5,8 @@
     "cleanUrls": true,
     "rewrites": [
       { "source": "/api/audit/conn", "function": { "functionId": "api", "region": "us-central1" } },
-      { "source": "/api/sysinfo", "function": { "functionId": "api", "region": "us-central1" } }
+      { "source": "/api/sysinfo", "function": { "functionId": "api", "region": "us-central1" } },
+      { "source": "/api/forget", "function": { "functionId": "api", "region": "us-central1" } }
     ],
     "headers": [
       { "source": "**/*.@(js|css|html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
