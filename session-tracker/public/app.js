@@ -789,7 +789,7 @@ VIEWS.devices = {
 // ---------- files ----------
 VIEWS.files = {
   shell: () => `<h1>X: drive files</h1>
-    <p class="muted small">Files put in an engine make's folder under Files on the X: drive (e.g. <code>Files\\Cummins\\6.7L\\CM2350B</code>) get an ID for that make added to their name, e.g. <code>Stage 2_CUM-00042.bin</code>. Pick it on the job form to record which file a job used. Other folders, such as Software and Uploads, don't get IDs.</p>
+    <p class="muted small">Files put in an engine make's folder under Files on the X: drive (e.g. <code>Files\\Cummins\\6.7L\\CM2350B</code>) get an ID for that make added to the front of their name, e.g. <code>CUM-00042_Stage 2.bin</code>. Pick it on the job form to record which file a job used. Other folders, such as Software and Uploads, don't get IDs.</p>
     <div class="card"><input id="fq2" value="${esc(S.filters.files)}" placeholder="Search by file ID, name or folder"></div><div id="vb"></div>`,
   bind() {
     $("#fq2").oninput = (e) => { S.filters.files = e.target.value; this.body(); };

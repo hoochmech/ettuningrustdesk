@@ -60,8 +60,8 @@ defaults `Cummins` CUM, `Duramax` DMX, `Power Stroke` PSD) with a folder per eng
 and ECM type inside it. Adding a make, model or ECM type, on the Lists tab or with
 "+ Add…" on the job form, creates its folder (`engineMakeFolders` function); removing one
 leaves the folder, since it may hold files. A file added anywhere under a make's folder
-is renamed to carry the next ID for that make:
-`Files/Cummins/6.7L/CM2350B/Stage 2.bin` → `Files/Cummins/6.7L/CM2350B/Stage 2_CUM-00042.bin`.
+is renamed with the next ID for that make in front of its name:
+`Files/Cummins/6.7L/CM2350B/Stage 2.bin` → `Files/Cummins/6.7L/CM2350B/CUM-00042_Stage 2.bin`.
 The ID is also stored on the object as `et_file_id` metadata. Files in other folders
 (`Software/`, customer `Uploads/`) are left alone. `backfill-files.js --apply` creates the
 folders for makes that were on the Lists tab before the function was deployed.

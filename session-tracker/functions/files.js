@@ -3,15 +3,15 @@
 //
 // Tune files live under Files/, in one folder per engine make named as on the Lists tab
 // of the dashboard (e.g. "Files/Cummins/..."), with a folder per engine model and ECM
-// type inside it. Each make has its own ID prefix and counter, and the ID is appended
-// to the file name, so "Stage 2.bin" in Files/Cummins/ becomes "Stage 2_CUM-00042.bin".
+// type inside it. Each make has its own ID prefix and counter, and the ID is added in
+// front of the file name, so "Stage 2.bin" in Files/Cummins/ becomes "CUM-00042_Stage 2.bin".
 // Files outside a make folder (such as Software/ or customer Uploads/) are left alone.
 const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 
 const XDRIVE_BUCKET = "ettuning-fileshare-files";
 const XDRIVE_TOPIC = "xdrive-files";
 const FILES_ROOT = "Files";
-const ID_SUFFIX = /_([A-Z0-9]{2,6}-\d{5,})$/;
+const ID_PREFIX = /^([A-Z0-9]{2,6}-\d{5,})_/;
 
 function defaultPrefix(makeName) {
   return makeName.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase() || "ETF";
@@ -21,7 +21,7 @@ function formatFileId(prefix, n) {
   return `${prefix}-${String(n).padStart(5, "0")}`;
 }
 
-// "Cummins/6.7L/Stage 2_CUM-00042.bin" -> folder, base "Stage 2", ext ".bin", id "CUM-00042"
+// "Cummins/6.7L/CUM-00042_Stage 2.bin" -> folder, base "Stage 2", ext ".bin", id "CUM-00042"
 function splitPath(path) {
   const slash = path.lastIndexOf("/");
   const folder = slash >= 0 ? path.slice(0, slash) : "";
@@ -29,9 +29,9 @@ function splitPath(path) {
   const dot = file.lastIndexOf(".");
   let base = dot > 0 ? file.slice(0, dot) : file;
   const ext = dot > 0 ? file.slice(dot) : "";
-  const m = base.match(ID_SUFFIX);
+  const m = base.match(ID_PREFIX);
   const id = m ? m[1] : "";
-  if (m) base = base.slice(0, m.index);
+  if (m) base = base.slice(m[0].length);
   const parts = path.split("/");
   // The engine make's folder: the one right under Files/.
   const make = parts.length > 2 && parts[0].toLowerCase() === FILES_ROOT.toLowerCase() ? parts[1] : "";
@@ -40,7 +40,7 @@ function splitPath(path) {
 
 function withId(path, id) {
   const p = splitPath(path);
-  return `${p.folder ? `${p.folder}/` : ""}${p.base}_${id}${p.ext}`;
+  return `${p.folder ? `${p.folder}/` : ""}${id}_${p.base}${p.ext}`;
 }
 
 async function findMake(db, top) {
