@@ -7,6 +7,8 @@ const logger = require("firebase-functions/logger");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestore");
 const { BadRequest, parseConnEvent, applyConnEvent, parseSysinfo } = require("./events");
+const { getAuth } = require("firebase-admin/auth");
+const { forgetSessions } = require("./forget");
 
 initializeApp();
 const db = getFirestore();
@@ -23,6 +25,8 @@ exports.api = onRequest(
       if (req.path === "/api/audit/conn") {
         await handleConn(body);
         res.status(200).send("");
+      } else if (req.path === "/api/forget") {
+        res.status(200).json({ removed: await handleForget(req, body) });
       } else if (req.path === "/api/sysinfo") {
         await handleSysinfo(body);
         // Tells the client to stop re-sending until its sysinfo changes.
@@ -70,7 +74,9 @@ async function handleConn(body) {
     const customerId = deviceSnap.exists ? deviceSnap.get("customer_id") || null : null;
     const out = applyConnEvent(open, ev, now, customerId);
 
-    tx.create(eventRef, { ...body, kind: ev.kind, received_at: now });
+    // An event that changes no session (such as the close of one removed with "Don't
+    // log") leaves nothing behind.
+    if (out.session || out.stale) tx.create(eventRef, { ...body, kind: ev.kind, received_at: now });
     tx.set(
       deviceRef,
       deviceSnap.exists
@@ -88,6 +94,20 @@ async function handleConn(body) {
   });
 }
 
+// Called by the dashboard with the signed-in staff member's ID token.
+async function handleForget(req, body) {
+  const token = (req.get("authorization") || "").replace(/^Bearer /, "");
+  let user;
+  try {
+    user = await getAuth().verifyIdToken(token);
+  } catch {
+    throw new BadRequest("not signed in");
+  }
+  if (!user.email_verified || !(await db.doc(`staff/${user.email}`).get()).exists) throw new BadRequest("not staff");
+  const ids = Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : [];
+  return forgetSessions(db, ids);
+}
+
 async function handleSysinfo(body) {
   const { id, fields } = parseSysinfo(body);
   await db.doc(`devices/${id}`).set(
@@ -96,19 +116,25 @@ async function handleSysinfo(body) {
   );
 }
 
-const { onObjectFinalized, onObjectDeleted } = require("firebase-functions/v2/storage");
+// The X: drive bucket lives in another project, so its changes arrive through a
+// Cloud Storage notification on this Pub/Sub topic (set up by setup.sh) rather than
+// a storage trigger, which only works for buckets in the function's own project.
+const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { getStorage } = require("firebase-admin/storage");
-const { XDRIVE_BUCKET, registerFile, renameToId, markDeleted } = require("./files");
+const { XDRIVE_TOPIC, registerFile, renameToId, markDeleted } = require("./files");
 
-exports.xdriveFileAdded = onObjectFinalized(
-  { bucket: XDRIVE_BUCKET, region: "us-central1", memory: "256MiB" },
+exports.xdriveFileChanged = onMessagePublished(
+  { topic: XDRIVE_TOPIC, region: "us-central1", memory: "256MiB" },
   async (event) => {
-    const reg = await registerFile(db, event.data);
-    if (reg?.renameTo) await renameToId(getStorage().bucket(event.data.bucket), event.data, reg.id, reg.renameTo);
+    const attrs = event.data.message.attributes || {};
+    const obj = event.data.message.json;
+    if (!obj?.name) return;
+    if (attrs.eventType === "OBJECT_FINALIZE") {
+      const reg = await registerFile(db, obj);
+      if (reg?.renameTo) await renameToId(getStorage().bucket(obj.bucket), obj, reg.id, reg.renameTo);
+    } else if (attrs.eventType === "OBJECT_DELETE" && !attrs.overwrittenByGeneration) {
+      // An overwrite also deletes the old generation; the new one keeps the file's ID.
+      await markDeleted(db, obj);
+    }
   },
-);
-
-exports.xdriveFileDeleted = onObjectDeleted(
-  { bucket: XDRIVE_BUCKET, region: "us-central1", memory: "256MiB" },
-  async (event) => markDeleted(db, event.data),
 );

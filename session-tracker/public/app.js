@@ -27,6 +27,9 @@ const VIEWS = {};
 let unsubs = [];
 let seeded = false;
 let pendingDeepLink = null;
+// Set by the client's "Job form" toolbar button: #device=<remote ID> of the computer
+// being worked on, whose open session gets the form.
+let pendingDeviceLink = null;
 
 // ---------- helpers ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -105,6 +108,8 @@ auth.onAuthStateChanged(async (user) => {
   subscribe();
   const m = location.hash.match(/^#session=([\w-]+)/);
   if (m) pendingDeepLink = m[1];
+  const dm = location.hash.match(/^#device=([\w-]+)/);
+  if (dm) pendingDeviceLink = dm[1];
   showView(VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "queue");
 });
 
@@ -143,6 +148,17 @@ function onData() {
     const id = pendingDeepLink;
     pendingDeepLink = null;
     openSessionForm(id);
+  }
+  if (pendingDeviceLink && ["customers", "categories", "engines", "vehicleMakes", "devices"].every((k) => S.loaded.has(k))) {
+    const rid = pendingDeviceLink;
+    pendingDeviceLink = null;
+    history.replaceState(null, "", `#${S.view}`);
+    // Asked of the server: the first S.sessions snapshot can come from the local cache.
+    db.collection("sessions").where("rustdesk_id", "==", rid).where("status", "==", "active").get().then((snap) => {
+      const live = snap.docs.sort((a, b) => (toDate(b.get("started_at")) || 0) - (toDate(a.get("started_at")) || 0))[0];
+      if (live) openSessionForm(live.id);
+      else alert(`No session is in progress on ${rid} yet. It shows up here a few seconds after you connect.`);
+    });
   }
   VIEWS[S.view].body();
 }
@@ -183,14 +199,32 @@ function showView(name) {
 // ---------- needs details ----------
 VIEWS.queue = {
   shell: () => `<h1>Sessions that need details</h1>
-    <p class="muted small">Every remote session that a technician logged into shows up here when it ends. Fill in the job details, or choose "Don't log" for a session that shouldn't be recorded as a job.</p>
+    <p class="muted small">Every remote session that a technician logged into shows up here when it ends. You can also fill in a job while it's still in progress. Fill in the job details, or choose "Don't log" for a session that shouldn't be recorded as a job.</p>
     <div id="vb"></div>`,
   body() {
     const vb = $("#vb");
     if (!vb) return;
     if (!S.loaded.has("queue")) { vb.innerHTML = `<div class="empty">Loading…</div>`; return; }
-    if (!S.queue.length) { vb.innerHTML = `<div class="card empty">All caught up. No sessions are waiting for details.</div>`; return; }
-    vb.innerHTML = S.queue.map((s) => `
+    const live = S.sessions.filter((s) => s.status === "active");
+    const liveHtml = live.length ? `<h2>In progress</h2>${live.map((s) => `
+      <div class="card">
+        <div class="row">
+          <div class="session-head">
+            <span><b>${esc(customerName(s.customer_id) || "No customer yet")}</b></span>
+            <span>${esc(deviceLabel(s.rustdesk_id))}</span>
+            <span>Started ${esc(fmtDate(s.started_at))}</span>
+            <span class="muted">${esc(s.conn_type_name)}${s.technician_name ? ` by ${esc(s.technician_name)}` : ""}</span>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn small" data-open="${s.id}">Fill in now</button>
+        </div>
+      </div>`).join("")}<h2>Ended</h2>` : "";
+    if (!S.queue.length) {
+      vb.innerHTML = `${liveHtml}<div class="card empty">All caught up. No sessions are waiting for details.</div>`;
+      $$("[data-open]", vb).forEach((b) => (b.onclick = () => openSessionForm(b.dataset.open)));
+      return;
+    }
+    vb.innerHTML = liveHtml + S.queue.map((s) => `
       <div class="card">
         <div class="row">
           <div class="session-head">
@@ -210,24 +244,29 @@ VIEWS.queue = {
   },
 };
 
-// Keeps the session on record as "not logged" (Sessions tab, Status filter) but out of
-// the queue and out of job lists, along with any overlapping connections to the same
-// computer that the job form would have folded into it.
+// Deletes the session and its connection records, along with any overlapping
+// connections to the same computer that the job form would have folded into it.
 async function dismissSession(id) {
-  if (!confirm("Don't log this session? It leaves this list and won't count as a job.")) return false;
+  if (!confirm("Don't log this session? It is deleted and leaves no record.")) return false;
   const s = findSession(id);
-  const done = { status: "dismissed", completed_at: FieldValue.serverTimestamp(), completed_by: S.user.email };
-  const batch = db.batch();
-  batch.update(db.doc(`sessions/${id}`), done);
+  const ids = [id];
   const start = (toDate(s?.started_at)?.getTime() ?? 0) - 60000;
   const end = (toDate(s?.ended_at)?.getTime() ?? Date.now()) + 60000;
   for (const o of S.queue) {
     if (!s || o.id === id || o.rustdesk_id !== s.rustdesk_id) continue;
     const os = toDate(o.started_at)?.getTime() ?? 0;
     const oe = toDate(o.ended_at)?.getTime() ?? os;
-    if (os <= end && oe >= start) batch.update(db.doc(`sessions/${o.id}`), done);
+    if (os <= end && oe >= start) ids.push(o.id);
   }
-  await batch.commit();
+  const res = await fetch("/api/forget", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${await S.user.getIdToken()}` },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    alert(`The session could not be removed (${res.status}). Try again.`);
+    return false;
+  }
   return true;
 }
 
@@ -247,6 +286,7 @@ async function openSessionForm(id) {
   const custId = s.customer_id || device?.customer_id || "";
   const cats = S.categories.filter((c) => c.active !== false || c.id === s.category_id);
   const files = [...(s.files || [])];
+  const origFiles = s.original_file ? [s.original_file] : [];
 
   openDialog(`
     <h2>Job details</h2>
@@ -290,10 +330,16 @@ async function openSessionForm(id) {
         </label>
       </div>
       <div class="grid" style="margin-top:12px">
-        <label>Vehicle make<select name="vehicle">${options(keepList(S.vehicleMakes, s.vehicle_make).map((x) => ({ value: x, label: x })), s.vehicle_make || "", "Choose vehicle make")}</select></label>
+        <label>Vehicle make<select name="vehicle"></select></label>
         <label>Engine make<select name="make"></select></label>
         <label>Engine model<select name="model"></select></label>
         <label>ECM type<select name="ecm"></select></label>
+      </div>
+      <div id="origfile-wrap" hidden>
+        <label style="margin-top:12px">Original file used (X: drive)
+          <div class="picker"><input name="origsearch" placeholder="The file the earlier tune used: ID or part of the name" autocomplete="off"><div class="picker-list" hidden></div></div>
+        </label>
+        <div class="chips" id="origchips"></div>
       </div>
       <label style="margin-top:12px">File used (X: drive)
         <div class="picker"><input name="filesearch" placeholder="Type a file ID like CUM-00042 or part of the name" autocomplete="off"><div class="picker-list" hidden></div></div>
@@ -302,7 +348,7 @@ async function openSessionForm(id) {
       <label style="margin-top:12px">Notes<textarea name="notes">${esc(s.notes)}</textarea></label>
       <p class="err" id="sf-err"></p>
       <div class="row"><span class="spacer"></span>
-        ${s.status === "needs_details" ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
+        ${["needs_details", "active"].includes(s.status) ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
         <button type="button" class="btn ghost" id="sf-cancel">Cancel</button>
         <button class="btn" id="sf-save">Save job</button>
       </div>
@@ -329,8 +375,12 @@ async function openSessionForm(id) {
     $("#pre-wrap").hidden = f.original.value !== PRE;
     // Same truck as the original job, so start from its vehicle and engine.
     const o = findSession(f.original.value);
+    if (o?.files?.length && !origFiles.length) {
+      origFiles.push(o.files[0]);
+      drawOrig();
+    }
     if (o && !f.vehicle.value && !f.make.value) {
-      f.vehicle.innerHTML = options(keepList(S.vehicleMakes, o.vehicle_make).map((x) => ({ value: x, label: x })), o.vehicle_make || "", "Choose vehicle make");
+      fillVehicle(o.vehicle_make || "");
       fill(f.make, keep(S.engines.map((m) => m.name), o.engine_make), o.engine_make || "", "Choose make");
       fillModel(o.engine_model || "", o.ecm_type || "");
     }
@@ -342,14 +392,26 @@ async function openSessionForm(id) {
   fillOriginal();
 
   const issueWrap = $("#issue-wrap");
-  const syncIssue = () => (issueWrap.hidden = !byId(S.categories, f.category.value)?.requires_issue);
+  const syncIssue = () => {
+    const c = byId(S.categories, f.category.value);
+    issueWrap.hidden = !c?.requires_issue;
+    $("#origfile-wrap").hidden = !asksOriginalFile(c);
+  };
   f.category.onchange = syncIssue;
   syncIssue();
 
   // Make -> model -> ECM: each choice limits the next list. A stored value that is no
   // longer in the list stays selectable so editing an old job doesn't lose it.
   const keep = keepList;
-  const fill = (sel, list, v, ph) => (sel.innerHTML = options(list.map((x) => ({ value: x, label: x })), v, ph));
+  // Each list ends with "+ Add…", which saves a new entry to the Lists tab and picks it.
+  // A model needs a make chosen first, and an ECM type a model.
+  const ADD = "__add";
+  const addLabel = { vehicle: "vehicle make", make: "engine make", model: "engine model", ecm: "ECM type" };
+  const fill = (sel, list, v, ph) => {
+    sel.innerHTML = options(list.map((x) => ({ value: x, label: x })), v, ph);
+    if ((sel.name === "model" && !make()) || (sel.name === "ecm" && !model())) return;
+    sel.insertAdjacentHTML("beforeend", `<option value="${ADD}">+ Add ${addLabel[sel.name]}…</option>`);
+  };
   const make = () => S.engines.find((m) => m.name === f.make.value);
   const model = () => make()?.models?.find((m) => m.name === f.model.value);
   const fillEcm = (v) => fill(f.ecm, keep(model()?.ecms || [], v), v, model() || v ? "Choose ECM" : "Choose a model first");
@@ -359,37 +421,75 @@ async function openSessionForm(id) {
   };
   fill(f.make, keep(S.engines.map((m) => m.name), s.engine_make), s.engine_make || "", "Choose make");
   fillModel(s.engine_model || "", s.ecm_type || "");
-  f.make.onchange = () => fillModel("", "");
-  f.model.onchange = () => fillEcm("");
+  const fillVehicle = (v) => fill(f.vehicle, keep(S.vehicleMakes, v), v, "Choose vehicle make");
+  fillVehicle(s.vehicle_make || "");
+  f.vehicle.dataset.prev = s.vehicle_make || "";
+  f.make.dataset.prev = s.engine_make || "";
+  f.model.dataset.prev = s.engine_model || "";
+  f.ecm.dataset.prev = s.ecm_type || "";
+  // Returns the typed name, or "" (with the list put back as it was) when cancelled.
+  const askNew = (sel, refill) => {
+    const name = prompt(`New ${addLabel[sel.name]}`)?.trim() || "";
+    if (!name) refill(sel.dataset.prev || "");
+    return name;
+  };
+  const sameName = (list, name) => list.find((x) => x.toLowerCase() === name.toLowerCase());
+  const saveModels = (m, models) => db.doc(`engine_makes/${m.id}`).update({ models });
+  const copyModels = (m) => (m.models || []).map((x) => ({ name: x.name, ecms: [...(x.ecms || [])] }));
+  f.vehicle.onchange = async () => {
+    if (f.vehicle.value !== ADD) return (f.vehicle.dataset.prev = f.vehicle.value);
+    const name = askNew(f.vehicle, fillVehicle);
+    if (!name) return;
+    const v = sameName(S.vehicleMakes, name) || name;
+    if (v === name) await db.doc("lists/vehicle_makes").set({ items: [...S.vehicleMakes, name] });
+    fillVehicle(v);
+    f.vehicle.dataset.prev = v;
+  };
+  f.make.onchange = async () => {
+    const refill = (v) => fill(f.make, keep(S.engines.map((m) => m.name), v), v, "Choose make");
+    if (f.make.value === ADD) {
+      const name = askNew(f.make, refill);
+      if (!name) return;
+      const v = sameName(S.engines.map((m) => m.name), name) || name;
+      if (v === name) {
+        await db.collection("engine_makes").add({ name, folder: name, file_prefix: name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase(), models: [] });
+      }
+      refill(v);
+    }
+    f.make.dataset.prev = f.make.value;
+    fillModel("", "");
+  };
+  f.model.onchange = async () => {
+    if (f.model.value === ADD) {
+      const m = make();
+      const name = askNew(f.model, (v) => fillModel(v, f.ecm.value));
+      if (!name || !m) return;
+      const list = copyModels(m);
+      const v = sameName(list.map((x) => x.name), name) || name;
+      if (v === name) await saveModels(m, [...list, { name, ecms: [] }]);
+      fill(f.model, keep((make()?.models || []).map((x) => x.name), v), v, "Choose model");
+    }
+    f.model.dataset.prev = f.model.value;
+    fillEcm("");
+  };
+  f.ecm.onchange = async () => {
+    if (f.ecm.value !== ADD) return (f.ecm.dataset.prev = f.ecm.value);
+    const m = make();
+    const name = askNew(f.ecm, fillEcm);
+    if (!name || !m || !model()) return;
+    const list = copyModels(m);
+    const entry = list.find((x) => x.name === f.model.value);
+    const v = sameName(entry.ecms, name) || name;
+    if (v === name) {
+      entry.ecms.push(name);
+      await saveModels(m, list);
+    }
+    fillEcm(v);
+    f.ecm.dataset.prev = v;
+  };
 
-  const chips = $("#filechips");
-  const drawChips = () => {
-    chips.innerHTML = files.map((x, i) => `<span class="chip">${esc(x.file_id)} · ${esc(x.name)}<button type="button" data-i="${i}" title="Remove">×</button></span>`).join("");
-    $$("button", chips).forEach((b) => (b.onclick = () => { files.splice(+b.dataset.i, 1); drawChips(); }));
-  };
-  drawChips();
-  const search = f.filesearch;
-  const list = $(".picker-list", f);
-  search.oninput = () => {
-    const q = search.value.trim().toLowerCase();
-    if (!q) { list.hidden = true; return; }
-    const mk = f.make.value;
-    const hits = S.files.filter((x) => !files.some((y) => y.file_id === x.file_id) &&
-      (x.file_id.toLowerCase().includes(q) || x.path.toLowerCase().includes(q)))
-      .sort((a, b) => (b.make === mk) - (a.make === mk)).slice(0, 12);
-    list.innerHTML = hits.length
-      ? hits.map((x) => `<div data-id="${esc(x.file_id)}"><b>${esc(x.file_id)}</b> ${esc(x.name)} <span class="muted small">${esc(x.folder)}</span></div>`).join("")
-      : `<div class="muted">No matching files</div>`;
-    list.hidden = false;
-    $$("[data-id]", list).forEach((d) => (d.onclick = () => {
-      const x = S.files.find((y) => y.file_id === d.dataset.id);
-      files.push({ file_id: x.file_id, name: x.name, path: x.path });
-      search.value = "";
-      list.hidden = true;
-      drawChips();
-    }));
-  };
-  search.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
+  filePicker(f.filesearch, $("#filechips"), files, 0, () => f.make.value);
+  const drawOrig = filePicker(f.origsearch, $("#origchips"), origFiles, 1, () => f.make.value);
 
   $("#sf-cancel").onclick = closeDialog;
   if ($("#sf-skip")) $("#sf-skip").onclick = async () => { if (await dismissSession(s.id)) closeDialog(); };
@@ -434,6 +534,7 @@ async function openSessionForm(id) {
       ecm_type: f.ecm.value,
       files,
       file_ids: files.map((x) => x.file_id),
+      original_file: asksOriginalFile(cat) ? origFiles[0] || null : null,
       notes: f.notes.value.trim(),
       status: "complete",
       ...done,
@@ -470,6 +571,44 @@ function keepList(list, v) {
   return v && !list.includes(v) ? [v, ...list] : list;
 }
 
+// Searchable X: drive file list that adds picks to `picked` as chips. `max` 0 means no
+// limit; with 1, a new pick replaces the old one. Returns a function that redraws the chips.
+function filePicker(search, chips, picked, max, currentMake) {
+  const list = search.parentElement.querySelector(".picker-list");
+  const draw = () => {
+    chips.innerHTML = picked.map((x, i) => `<span class="chip">${esc(x.file_id)} · ${esc(x.name)}<button type="button" data-i="${i}" title="Remove">×</button></span>`).join("");
+    $$("button", chips).forEach((b) => (b.onclick = () => { picked.splice(+b.dataset.i, 1); draw(); }));
+  };
+  draw();
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+    if (!q) { list.hidden = true; return; }
+    const mk = currentMake();
+    const hits = S.files.filter((x) => !picked.some((y) => y.file_id === x.file_id) &&
+      (x.file_id.toLowerCase().includes(q) || x.path.toLowerCase().includes(q)))
+      .sort((a, b) => (b.make === mk) - (a.make === mk)).slice(0, 12);
+    list.innerHTML = hits.length
+      ? hits.map((x) => `<div data-id="${esc(x.file_id)}"><b>${esc(x.file_id)}</b> ${esc(x.name)} <span class="muted small">${esc(x.folder)}</span></div>`).join("")
+      : `<div class="muted">No matching files</div>`;
+    list.hidden = false;
+    $$("[data-id]", list).forEach((d) => (d.onclick = () => {
+      const x = S.files.find((y) => y.file_id === d.dataset.id);
+      if (max && picked.length >= max) picked.splice(0, picked.length);
+      picked.push({ file_id: x.file_id, name: x.name, path: x.path });
+      search.value = "";
+      list.hidden = true;
+      draw();
+    }));
+  };
+  search.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
+  return draw;
+}
+
+// Categories made before this setting existed fall back to asking for Warranty and Tune revision.
+function asksOriginalFile(c) {
+  return !!c && (c.asks_original_file ?? /^(warranty|tune revision)$/i.test(c.name));
+}
+
 // ---------- sessions ----------
 VIEWS.sessions = {
   shell: () => {
@@ -481,7 +620,7 @@ VIEWS.sessions = {
       <label>Billable<select id="fb">${options([{ value: "yes", label: "Billable" }, { value: "no", label: "Not billable" }], fl.billable, "All")}</select></label>
       <label>Status<select id="fs">${options([
         { value: "complete", label: "Completed jobs" }, { value: "needs_details", label: "Needs details" },
-        { value: "active", label: "In progress" }, { value: "dismissed", label: "Not logged" }, { value: "all", label: "Everything" },
+        { value: "active", label: "In progress" }, { value: "all", label: "Everything" },
       ], fl.status)}</select></label>
     </div>
     <div id="vb"></div>`;
@@ -504,7 +643,7 @@ VIEWS.sessions = {
       if (fl.billable && s.billable !== (fl.billable === "yes")) return false;
       if (!q) return true;
       return [customerName(s.customer_id), deviceLabel(s.rustdesk_id), s.technician_name, s.notes, s.warranty_issue,
-        s.vehicle_make, s.engine_make, s.engine_model, s.ecm_type, ...(s.file_ids || [])].join(" ").toLowerCase().includes(q);
+        s.vehicle_make, s.engine_make, s.engine_model, s.ecm_type, ...(s.file_ids || []), s.original_file?.file_id].join(" ").toLowerCase().includes(q);
     });
   },
   body() {
@@ -542,6 +681,7 @@ function exportCsv(rows) {
     ["Category", (s) => categoryName(s.category_id) || s.category_name || ""],
     ["Billable", (s) => (s.billable === true ? "Yes" : s.billable === false ? "No" : "")],
     ["Warranty issue", (s) => s.warranty_issue],
+    ["Original file", (s) => s.original_file?.file_id || ""],
     ["Original job", (s) => (s.original_job_pre_tracking ? `Before tracking: ${s.original_job_note || ""}` : s.original_job_id ? toDate(findSession(s.original_job_id)?.started_at)?.toISOString() || s.original_job_id : "")],
     ["Vehicle make", (s) => s.vehicle_make],
     ["Engine make", (s) => s.engine_make], ["Engine model", (s) => s.engine_model], ["ECM", (s) => s.ecm_type],
@@ -669,13 +809,13 @@ VIEWS.files = {
 VIEWS.settings = {
   shell: () => `<h1>Lists</h1>
     <div class="card"><div class="row"><h2>Work categories</h2><span class="spacer"></span><button class="btn small" id="addcat">Add category</button></div>
-      <p class="muted small">"Asks for issue" shows the issue box on the job form, as Warranty does. Turning a category off hides it from new jobs but keeps old ones.</p>
+      <p class="muted small">"Asks for issue" shows the original-job and issue boxes on the job form, as Warranty does. "Asks for original file" shows a picker for the file the earlier tune used, as Warranty and Tune revision do. Turning a category off hides it from new jobs but keeps old ones.</p>
       <div id="cats"></div></div>
     <div class="card"><div class="row"><h2>Vehicle makes</h2><span class="spacer"></span><button class="btn small" id="savevm">Save</button></div>
       <p class="muted small">One per line.</p>
       <textarea id="vmakes" rows="6"></textarea></div>
     <div class="card"><div class="row"><h2>Engines</h2><span class="spacer"></span><button class="btn small" id="addmake">Add make</button></div>
-      <p class="muted small">One model per line, then a colon and its ECM types separated by commas, e.g. <code>6.7L (2019+): CM2350B</code>. The X: drive folder is where this make's tune files go, and the file ID prefix starts their IDs. Changing a prefix only affects files added afterwards.</p>
+      <p class="muted small">Each make lists its engine models, and each model its ECM types; the job form offers them in that order. Model and ECM changes save as you make them; Save stores the make's name, X: drive folder and file ID prefix. The folder is where this make's tune files go on the X: drive, and the prefix starts their IDs. Changing a prefix only affects files added afterwards.</p>
       <div id="makes"></div></div>`,
   bind() {
     $("#addcat").onclick = async () => {
@@ -696,42 +836,103 @@ VIEWS.settings = {
   body() {
     const cats = $("#cats");
     if (!cats) return;
-    cats.innerHTML = `<table><tr><th>Name</th><th>Asks for issue</th><th>In use</th></tr>
+    cats.innerHTML = `<table><tr><th>Name</th><th>Asks for issue</th><th>Asks for original file</th><th>In use</th></tr>
       ${S.categories.map((c) => `<tr><td><input data-cname="${c.id}" value="${esc(c.name)}"></td>
         <td><input type="checkbox" data-cissue="${c.id}"${c.requires_issue ? " checked" : ""}></td>
+        <td><input type="checkbox" data-corig="${c.id}"${asksOriginalFile(c) ? " checked" : ""}></td>
         <td><input type="checkbox" data-cactive="${c.id}"${c.active !== false ? " checked" : ""}></td></tr>`).join("")}</table>`;
     $$("[data-cname]", cats).forEach((i) => (i.onchange = () => i.value.trim() && db.doc(`work_categories/${i.dataset.cname}`).update({ name: i.value.trim() })));
     $$("[data-cissue]", cats).forEach((i) => (i.onchange = () => db.doc(`work_categories/${i.dataset.cissue}`).update({ requires_issue: i.checked })));
+    $$("[data-corig]", cats).forEach((i) => (i.onchange = () => db.doc(`work_categories/${i.dataset.corig}`).update({ asks_original_file: i.checked })));
     $$("[data-cactive]", cats).forEach((i) => (i.onchange = () => db.doc(`work_categories/${i.dataset.cactive}`).update({ active: i.checked })));
 
     const vm = $("#vmakes");
     if (document.activeElement !== vm) vm.value = S.vehicleMakes.join("\n");
 
     const makes = $("#makes");
-    // Don't redraw a make someone is typing in.
-    if (makes.contains(document.activeElement)) return;
+    // Don't redraw while someone is typing in one of the boxes.
+    if (document.activeElement?.tagName === "INPUT" && makes.contains(document.activeElement)) return;
     makes.innerHTML = S.engines.map((m) => `<div class="card" style="background:var(--panel2)">
         <div class="row"><label>Make<input data-mname="${m.id}" value="${esc(m.name)}"></label>
           <label>X: drive folder<input data-mfolder="${m.id}" value="${esc(m.folder ?? m.name)}"></label>
           <label style="max-width:120px">File ID prefix<input data-mprefix="${m.id}" value="${esc(m.file_prefix ?? "")}" maxlength="6"></label><span class="spacer"></span>
           <button class="btn ghost small" data-mdel="${m.id}">Delete make</button><button class="btn small" data-msave="${m.id}">Save</button></div>
-        <textarea data-mmodels="${m.id}" rows="${Math.max(3, (m.models || []).length + 1)}" style="margin-top:8px;font-family:ui-monospace,monospace">${esc((m.models || []).map((x) => `${x.name}: ${(x.ecms || []).join(", ")}`).join("\n"))}</textarea>
+        <table style="margin-top:8px"><tr><th style="width:34%">Engine model</th><th>ECM types</th><th></th></tr>
+        ${(m.models || []).map((x, i) => `<tr>
+          <td><input data-model="${m.id}:${i}" value="${esc(x.name)}"></td>
+          <td><div class="chips" style="margin:0 0 6px">${(x.ecms || []).map((e, j) => `<span class="chip">${esc(e)}<button type="button" data-ecmdel="${m.id}:${i}:${j}" title="Remove ${esc(e)}">×</button></span>`).join("") || `<span class="muted small">None yet</span>`}</div>
+            <div class="row"><input data-ecmnew="${m.id}:${i}" placeholder="New ECM type" style="max-width:200px"><button class="btn ghost small" data-ecmadd="${m.id}:${i}">Add ECM</button></div></td>
+          <td><button class="btn ghost small" data-modeldel="${m.id}:${i}">Remove model</button></td></tr>`).join("")}
+        <tr><td><input data-modelnew="${m.id}" placeholder="New engine model"></td><td colspan="2"><button class="btn ghost small" data-modeladd="${m.id}">Add model</button></td></tr>
+        </table>
       </div>`).join("") || `<p class="muted">No engines yet.</p>`;
+
+    const make = (id) => S.engines.find((x) => x.id === id);
+    const models = (id) => (make(id)?.models || []).map((x) => ({ name: x.name, ecms: [...(x.ecms || [])] }));
+    const save = async (id, list) => {
+      document.activeElement?.blur();
+      await db.doc(`engine_makes/${id}`).update({ models: list });
+      VIEWS.settings.body();
+    };
+    const parts = (v) => v.split(":").map((x, k) => (k ? Number(x) : x));
+    const onEnter = (input, button) => (input.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); button.click(); } });
+
+    $$("[data-modeladd]", makes).forEach((b) => {
+      const id = b.dataset.modeladd;
+      const input = $(`[data-modelnew="${id}"]`, makes);
+      onEnter(input, b);
+      b.onclick = () => {
+        const name = input.value.trim();
+        if (!name) return;
+        const list = models(id);
+        if (list.some((x) => x.name === name)) return alert(`${name} is already listed.`);
+        save(id, [...list, { name, ecms: [] }]);
+      };
+    });
+    $$("[data-model]", makes).forEach((input) => (input.onchange = () => {
+      const [id, i] = parts(input.dataset.model);
+      const name = input.value.trim();
+      if (!name) return;
+      const list = models(id);
+      list[i].name = name;
+      save(id, list);
+    }));
+    $$("[data-modeldel]", makes).forEach((b) => (b.onclick = () => {
+      const [id, i] = parts(b.dataset.modeldel);
+      const list = models(id);
+      if (!confirm(`Remove ${list[i].name} and its ECM types? Jobs that already used it keep their values.`)) return;
+      list.splice(i, 1);
+      save(id, list);
+    }));
+    $$("[data-ecmadd]", makes).forEach((b) => {
+      const key = b.dataset.ecmadd;
+      const input = $(`[data-ecmnew="${key}"]`, makes);
+      onEnter(input, b);
+      b.onclick = () => {
+        const [id, i] = parts(key);
+        const ecm = input.value.trim();
+        if (!ecm) return;
+        const list = models(id);
+        if (list[i].ecms.includes(ecm)) return alert(`${ecm} is already listed.`);
+        list[i].ecms.push(ecm);
+        save(id, list);
+      };
+    });
+    $$("[data-ecmdel]", makes).forEach((b) => (b.onclick = () => {
+      const [id, i, j] = parts(b.dataset.ecmdel);
+      const list = models(id);
+      list[i].ecms.splice(j, 1);
+      save(id, list);
+    }));
     $$("[data-msave]", makes).forEach((b) => (b.onclick = async () => {
       const id = b.dataset.msave;
       const name = $(`[data-mname="${id}"]`, makes).value.trim();
-      const models = $(`[data-mmodels="${id}"]`, makes).value.split("\n").map((line) => {
-        const i = line.lastIndexOf(":");
-        const mname = (i >= 0 ? line.slice(0, i) : line).trim();
-        const ecms = i >= 0 ? line.slice(i + 1).split(",").map((x) => x.trim()).filter(Boolean) : [];
-        return { name: mname, ecms };
-      }).filter((x) => x.name);
       const folder = $(`[data-mfolder="${id}"]`, makes).value.trim() || name;
       const prefix = $(`[data-mprefix="${id}"]`, makes).value.trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
       if (!name) return;
       if (prefix.length < 2) { alert("The file ID prefix needs 2 to 6 letters or numbers."); return; }
       if (S.engines.some((x) => x.id !== id && x.file_prefix === prefix)) { alert(`Another make already uses ${prefix}.`); return; }
-      await db.doc(`engine_makes/${id}`).set({ name, folder, file_prefix: prefix, models });
+      await db.doc(`engine_makes/${id}`).update({ name, folder, file_prefix: prefix });
       b.blur();
       VIEWS.settings.body();
     }));

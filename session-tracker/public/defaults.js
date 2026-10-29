@@ -2,10 +2,10 @@
 // empty. After that the lists are edited on the Lists tab, not here.
 window.DEFAULT_CATEGORIES = [
   { name: "Tune install", requires_issue: false },
-  { name: "Tune revision", requires_issue: false },
+  { name: "Tune revision", requires_issue: false, asks_original_file: true },
   { name: "Diagnostics", requires_issue: false },
   { name: "Datalog review", requires_issue: false },
-  { name: "Warranty", requires_issue: true },
+  { name: "Warranty", requires_issue: true, asks_original_file: true },
   { name: "Support / other", requires_issue: false },
 ];
 

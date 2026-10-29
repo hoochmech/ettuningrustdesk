@@ -31,6 +31,12 @@ gcloud services enable firestore.googleapis.com cloudfunctions.googleapis.com ru
   storage.googleapis.com firebasehosting.googleapis.com identitytoolkit.googleapis.com \
   firebaserules.googleapis.com --project "$PROJECT" || fail "enabling APIs failed."
 ok "APIs enabled"
+# Newer projects build Cloud Functions as the default compute account, which starts
+# without the permissions a build needs.
+build_sa="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')-compute@developer.gserviceaccount.com"
+gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$build_sa" \
+  --role roles/cloudbuild.builds.builder --condition=None --quiet >/dev/null || fail "letting $build_sa build functions failed."
+ok "function builds allowed"
 
 echo "== 2/7 Firestore database"
 if gcloud firestore databases describe --database='(default)' --project "$PROJECT" >/dev/null 2>&1; then
@@ -51,22 +57,48 @@ code=$(curl -s -o /tmp/staff.json -w "%{http_code}" -X PATCH \
 ok "$EMAIL can sign in"
 
 echo "== 4/7 X: drive bucket"
-loc=$(gcloud storage buckets describe "gs://$BUCKET" --format='value(location)' 2>/dev/null)
-if [ -z "$loc" ]; then
-  fail "cannot read gs://$BUCKET. It must exist in project $PROJECT for file IDs to work."
+bucket_number=$(curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://storage.googleapis.com/storage/v1/b/$BUCKET?fields=projectNumber" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("projectNumber", ""))' 2>/dev/null)
+[ -n "$bucket_number" ] || fail "cannot read gs://$BUCKET. Check the name and that your account can see it."
+bucket_project=$(gcloud projects describe "$bucket_number" --format='value(projectId)') || fail "cannot read project $bucket_number."
+ok "bucket is in project $bucket_project"
+# The bucket reports adds and deletes to a Pub/Sub topic here, which the xdriveFileChanged
+# function listens on. This works whether or not the bucket is in this project.
+TOPIC="xdrive-files"
+gcloud pubsub topics describe "$TOPIC" --project "$PROJECT" >/dev/null 2>&1 \
+  || gcloud pubsub topics create "$TOPIC" --project "$PROJECT" >/dev/null || fail "creating Pub/Sub topic $TOPIC failed."
+gs_agent=$(gcloud storage service-agent --project "$bucket_project" 2>/dev/null)
+# Make sure Google has actually created that project's storage agent before granting it anything.
+gcloud beta services identity create --service=storage.googleapis.com --project "$bucket_project" --quiet >/dev/null 2>&1
+xdrive_ok=1
+if [ -n "$gs_agent" ] && gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project "$PROJECT" \
+    --member "serviceAccount:$gs_agent" --role roles/pubsub.publisher --quiet >/dev/null 2>&1; then
+  ok "bucket may publish to $TOPIC"
 fi
-case "$(echo "$loc" | tr '[:upper:]' '[:lower:]')" in
-  us|us-central1|nam4) ok "bucket location $loc works with $REGION" ;;
-  *) fail "bucket is in $loc. Change REGION in functions/index.js, firebase.json and this script to match it." ;;
-esac
-# Cloud Storage publishes upload events through Pub/Sub.
-gs_agent=$(gcloud storage service-agent --project "$PROJECT")
-gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$gs_agent" \
-  --role roles/pubsub.publisher --condition=None --quiet >/dev/null || fail "granting Pub/Sub to the storage agent failed."
-ok "storage events allowed"
+if gcloud storage buckets notifications list "gs://$BUCKET" --format=json 2>/dev/null | grep -q "projects/$PROJECT/topics/$TOPIC"; then
+  ok "bucket notification already set"
+elif gcloud storage buckets notifications create "gs://$BUCKET" --topic="projects/$PROJECT/topics/$TOPIC" \
+    --payload-format=json --event-types=OBJECT_FINALIZE,OBJECT_DELETE >/dev/null; then
+  ok "bucket notification created"
+else
+  xdrive_ok=""
+  note "could not connect gs://$BUCKET to $TOPIC. Continuing so the dashboard still deploys; X: drive file IDs stay off until this works."
+fi
+# The function renames new files to add their ID, so its account needs write access to the bucket.
+number=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
+if gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+    --member "serviceAccount:$number-compute@developer.gserviceaccount.com" \
+    --role roles/storage.objectAdmin --condition=None >/dev/null; then
+  ok "functions can rename files in gs://$BUCKET"
+else
+  xdrive_ok=""
+  note "could not give the functions write access to gs://$BUCKET."
+fi
 
 echo "== 5/7 Firebase sign-in, hosting site and web app"
-$FB projects:list >/dev/null 2>&1 || $FB login --no-localhost || fail "Firebase sign-in failed."
+# A saved Firebase sign-in can expire while still counting as "logged in", so reauth when it fails.
+$FB projects:list >/dev/null 2>&1 || $FB login --reauth --no-localhost || fail "Firebase sign-in failed."
 if $FB hosting:sites:get "$SITE" --project "$PROJECT" >/dev/null 2>&1; then
   ok "site $SITE exists"
 else
@@ -91,6 +123,8 @@ gcloud auth application-default print-access-token >/dev/null 2>&1 || gcloud aut
 (cd functions && node backfill-files.js "$PROJECT") || note "listing failed; run 'cd functions && node backfill-files.js $PROJECT' later."
 note "the dashboard creates the engine list the first time you sign in, so if no files were listed, sign in first and run that again."
 note "to give those files IDs (this renames them), run: cd functions && node backfill-files.js $PROJECT --apply"
+
+[ -n "$xdrive_ok" ] || note "X: drive file IDs are not connected yet; paste the step 4 messages to Claude."
 
 cat <<EOF2
 

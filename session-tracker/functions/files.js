@@ -9,6 +9,7 @@
 const { FieldValue, Timestamp } = require("firebase-admin/firestore");
 
 const XDRIVE_BUCKET = "ettuning-fileshare-files";
+const XDRIVE_TOPIC = "xdrive-files";
 const ID_SUFFIX = /_([A-Z0-9]{2,6}-\d{5,})$/;
 
 function defaultPrefix(makeName) {
@@ -115,4 +116,4 @@ async function markDeleted(db, obj) {
   await db.doc(`files/${gen.get("file_id")}`).update({ current: false, deleted: true });
 }
 
-module.exports = { XDRIVE_BUCKET, defaultPrefix, formatFileId, splitPath, withId, registerFile, renameToId, markDeleted };
+module.exports = { XDRIVE_BUCKET, XDRIVE_TOPIC, defaultPrefix, formatFileId, splitPath, withId, registerFile, renameToId, markDeleted };

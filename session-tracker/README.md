@@ -11,7 +11,7 @@ Runs on Firebase in the `rustdesk-api-482222` project:
 | Piece | What it does |
 | --- | --- |
 | `functions/index.js` `api` | Receives the session reports clients send to their API server (`/api/audit/conn`, `/api/sysinfo`) |
-| `functions/index.js` `xdriveFileAdded` / `xdriveFileDeleted` | Give X: drive tune files their IDs |
+| `functions/index.js` `xdriveFileChanged` | Gives X: drive tune files their IDs. The bucket sends its adds and deletes to the `xdrive-files` Pub/Sub topic, so it can live in another project |
 | `public/` | The dashboard, at `https://rustdesk-api-482222-sessions.web.app` |
 | `firestore.rules` | Only people on the staff list can read or edit |
 
@@ -29,7 +29,20 @@ fills in the `devices` list. Link a computer to a customer once (on the job form
 the Computers tab) and its later sessions arrive with the customer filled in.
 
 A session that shouldn't be recorded as a job gets "Don't log" (in the queue or on the
-form). It's kept as `dismissed` and shows only under the Sessions tab's "Not logged" filter.
+form). The session, its connection records and any overlapping connections it would
+have absorbed are deleted (through `/api/forget`, which checks the staff list), so no
+record is left. A session that is still open when it's removed leaves nothing when it
+closes either. Saved jobs can't be removed this way.
+
+The job form can also be filled in while the session is still going: "Fill in now"
+under "In progress" on the queue page, or the clipboard button ("Job form") in the
+client's remote toolbar, which opens the dashboard at `#device=<remote ID>`. A job saved
+early stays complete when the session closes.
+
+Vehicle make, engine make, engine model and ECM type lists end in "+ Add…" on the job
+form, which saves the new entry to the Lists tab and picks it. A make added this way
+gets its name as its X: drive folder and the first three letters as its file ID prefix;
+change those on the Lists tab before putting files in its folder.
 
 A file transfer or terminal window is a separate connection. When a job is saved,
 other waiting connections on the same computer that overlap it (within a minute) are
