@@ -121,7 +121,7 @@ async function handleSysinfo(body) {
 // a storage trigger, which only works for buckets in the function's own project.
 const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { getStorage } = require("firebase-admin/storage");
-const { XDRIVE_TOPIC, registerFile, renameToId, markDeleted } = require("./files");
+const { XDRIVE_BUCKET, XDRIVE_TOPIC, registerFile, renameToId, markDeleted, ensureMakeFolders } = require("./files");
 
 exports.xdriveFileChanged = onMessagePublished(
   { topic: XDRIVE_TOPIC, region: "us-central1", memory: "256MiB" },
@@ -136,5 +136,19 @@ exports.xdriveFileChanged = onMessagePublished(
       // An overwrite also deletes the old generation; the new one keeps the file's ID.
       await markDeleted(db, obj);
     }
+  },
+);
+
+// Adding an engine make, model or ECM type (Lists tab or job form) creates its folder
+// under Files/ on the X: drive, so tune files have a place to go.
+const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+
+exports.engineMakeFolders = onDocumentWritten(
+  { document: "engine_makes/{id}", region: "us-central1", memory: "256MiB" },
+  async (event) => {
+    const make = event.data?.after?.data();
+    if (!make) return;
+    const created = await ensureMakeFolders(getStorage().bucket(XDRIVE_BUCKET), make);
+    if (created.length) logger.info("created X: drive folders", { make: make.name, created });
   },
 );

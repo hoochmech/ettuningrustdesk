@@ -785,7 +785,7 @@ VIEWS.devices = {
 // ---------- files ----------
 VIEWS.files = {
   shell: () => `<h1>X: drive files</h1>
-    <p class="muted small">Files put in an engine make's folder on the X: drive get an ID for that make added to their name, e.g. <code>Stage 2_CUM-00042.bin</code>. Pick it on the job form to record which file a job used. Other folders, such as Software and Uploads, don't get IDs.</p>
+    <p class="muted small">Files put in an engine make's folder under Files on the X: drive (e.g. <code>Files\\Cummins\\6.7L\\CM2350B</code>) get an ID for that make added to their name, e.g. <code>Stage 2_CUM-00042.bin</code>. Pick it on the job form to record which file a job used. Other folders, such as Software and Uploads, don't get IDs.</p>
     <div class="card"><input id="fq2" value="${esc(S.filters.files)}" placeholder="Search by file ID, name or folder"></div><div id="vb"></div>`,
   bind() {
     $("#fq2").oninput = (e) => { S.filters.files = e.target.value; this.body(); };
@@ -815,7 +815,7 @@ VIEWS.settings = {
       <p class="muted small">One per line.</p>
       <textarea id="vmakes" rows="6"></textarea></div>
     <div class="card"><div class="row"><h2>Engines</h2><span class="spacer"></span><button class="btn small" id="addmake">Add make</button></div>
-      <p class="muted small">Each make lists its engine models, and each model its ECM types; the job form offers them in that order. Model and ECM changes save as you make them; Save stores the make's name, X: drive folder and file ID prefix. The folder is where this make's tune files go on the X: drive, and the prefix starts their IDs. Changing a prefix only affects files added afterwards.</p>
+      <p class="muted small">Each make lists its engine models, and each model its ECM types; the job form offers them in that order. Model and ECM changes save as you make them; Save stores the make's name, X: drive folder and file ID prefix. The folder is where this make's tune files go under Files on the X: drive, and the prefix starts their IDs. Adding a make, model or ECM type creates its folder there (Files\\Make\\Model\\ECM); removing one leaves the folder alone. Changing a prefix only affects files added afterwards.</p>
       <div id="makes"></div></div>`,
   bind() {
     $("#addcat").onclick = async () => {

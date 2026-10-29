@@ -55,10 +55,17 @@ test("bad input is rejected", () => {
   assert.throws(() => parseConnEvent([]), BadRequest);
 });
 
-const { splitPath, withId } = require("./files");
+const { splitPath, withId, makeFolders } = require("./files");
 
 test("file IDs are appended to the readable name", () => {
   assert.strictEqual(withId("Cummins/6.7L/Stage 2.bin", "CUM-00042"), "Cummins/6.7L/Stage 2_CUM-00042.bin");
   assert.strictEqual(withId("Cummins/Old_CUM-00001.bin", "CUM-00042"), "Cummins/Old_CUM-00042.bin");
   assert.strictEqual(splitPath("Duramax/a_DMX-00007.hex").id, "DMX-00007");
+});
+
+test("a make gets a folder per model and per ECM type under it", () => {
+  const make = { name: "Detroit", folder: "Detroit", models: [{ name: "DD15", ecms: ["DDEC 10", "MCM/ACM"] }, { name: "Series 60", ecms: [] }] };
+  assert.deepStrictEqual(makeFolders(make), ["Detroit", "Detroit/DD15", "Detroit/DD15/DDEC 10", "Detroit/DD15/MCM-ACM", "Detroit/Series 60"]);
+  assert.strictEqual(splitPath("Files/Detroit/DD15/a.bin").make, "Detroit");
+  assert.strictEqual(splitPath("Software/a.exe").make, "");
 });
