@@ -31,6 +31,16 @@ the Computers tab) and its later sessions arrive with the customer filled in.
 A session that shouldn't be recorded as a job gets "Don't log" (in the queue or on the
 form). It's kept as `dismissed` and shows only under the Sessions tab's "Not logged" filter.
 
+The job form can also be filled in while the session is still going: "Fill in now"
+under "In progress" on the queue page, or the clipboard button ("Job form") in the
+client's remote toolbar, which opens the dashboard at `#device=<remote ID>`. A job saved
+early stays complete when the session closes.
+
+Vehicle make, engine make, engine model and ECM type lists end in "+ Add…" on the job
+form, which saves the new entry to the Lists tab and picks it. A make added this way
+gets its name as its X: drive folder and the first three letters as its file ID prefix;
+change those on the Lists tab before putting files in its folder.
+
 A file transfer or terminal window is a separate connection. When a job is saved,
 other waiting connections on the same computer that overlap it (within a minute) are
 folded into it.

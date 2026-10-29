@@ -37,6 +37,18 @@ test("a connection that never logs in stays out of the queue", () => {
   assert.strictEqual(s.status, "not_authorized");
 });
 
+test("a job filled in during the session stays complete when it closes", () => {
+  let open = null;
+  for (const [body, ms] of [[{ action: "new", ip: "1.2.3.4" }, 0], [{ peer: ["987", "Sam"], type: 0 }, 5000]]) {
+    open = applyConnEvent(open, parseConnEvent({ ...base, ...body }), at(ms), "cust1").session;
+  }
+  open = { ...open, status: "complete", category_id: "tune" };
+  const s = applyConnEvent(open, parseConnEvent({ ...base, action: "close" }), at(65000), "cust1").session;
+  assert.strictEqual(s.status, "complete");
+  assert.strictEqual(s.category_id, "tune");
+  assert.strictEqual(s.duration_sec, 65);
+});
+
 test("bad input is rejected", () => {
   assert.throws(() => parseConnEvent({ id: "../x", conn_id: 1 }), BadRequest);
   assert.throws(() => parseConnEvent({ id: "123", conn_id: "1" }), BadRequest);

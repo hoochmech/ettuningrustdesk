@@ -125,7 +125,10 @@ function finish(session, endedAt, reason) {
     ended_at: endedAt,
     end_reason: reason,
     duration_sec: started !== null && ended !== null ? Math.max(0, Math.round((ended - started) / 1000)) : null,
-    status: session.authorized_at ? "needs_details" : "not_authorized",
+    // The job form can be filled in while the session is still open; keep that result.
+    status: ["complete", "dismissed", "merged"].includes(session.status)
+      ? session.status
+      : session.authorized_at ? "needs_details" : "not_authorized",
   };
 }
 

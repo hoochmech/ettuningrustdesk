@@ -27,6 +27,9 @@ const VIEWS = {};
 let unsubs = [];
 let seeded = false;
 let pendingDeepLink = null;
+// Set by the client's "Job form" toolbar button: #device=<remote ID> of the computer
+// being worked on, whose open session gets the form.
+let pendingDeviceLink = null;
 
 // ---------- helpers ----------
 const $ = (sel, root = document) => root.querySelector(sel);
@@ -105,6 +108,8 @@ auth.onAuthStateChanged(async (user) => {
   subscribe();
   const m = location.hash.match(/^#session=([\w-]+)/);
   if (m) pendingDeepLink = m[1];
+  const dm = location.hash.match(/^#device=([\w-]+)/);
+  if (dm) pendingDeviceLink = dm[1];
   showView(VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : "queue");
 });
 
@@ -143,6 +148,14 @@ function onData() {
     const id = pendingDeepLink;
     pendingDeepLink = null;
     openSessionForm(id);
+  }
+  if (pendingDeviceLink && S.loaded.has("sessions")) {
+    const rid = pendingDeviceLink;
+    pendingDeviceLink = null;
+    history.replaceState(null, "", `#${S.view}`);
+    const live = S.sessions.find((s) => s.rustdesk_id === rid && s.status === "active");
+    if (live) openSessionForm(live.id);
+    else alert(`No session is in progress on ${rid} yet. It shows up here a few seconds after you connect.`);
   }
   VIEWS[S.view].body();
 }
@@ -183,14 +196,32 @@ function showView(name) {
 // ---------- needs details ----------
 VIEWS.queue = {
   shell: () => `<h1>Sessions that need details</h1>
-    <p class="muted small">Every remote session that a technician logged into shows up here when it ends. Fill in the job details, or choose "Don't log" for a session that shouldn't be recorded as a job.</p>
+    <p class="muted small">Every remote session that a technician logged into shows up here when it ends. You can also fill in a job while it's still in progress. Fill in the job details, or choose "Don't log" for a session that shouldn't be recorded as a job.</p>
     <div id="vb"></div>`,
   body() {
     const vb = $("#vb");
     if (!vb) return;
     if (!S.loaded.has("queue")) { vb.innerHTML = `<div class="empty">Loading…</div>`; return; }
-    if (!S.queue.length) { vb.innerHTML = `<div class="card empty">All caught up. No sessions are waiting for details.</div>`; return; }
-    vb.innerHTML = S.queue.map((s) => `
+    const live = S.sessions.filter((s) => s.status === "active");
+    const liveHtml = live.length ? `<h2>In progress</h2>${live.map((s) => `
+      <div class="card">
+        <div class="row">
+          <div class="session-head">
+            <span><b>${esc(customerName(s.customer_id) || "No customer yet")}</b></span>
+            <span>${esc(deviceLabel(s.rustdesk_id))}</span>
+            <span>Started ${esc(fmtDate(s.started_at))}</span>
+            <span class="muted">${esc(s.conn_type_name)}${s.technician_name ? ` by ${esc(s.technician_name)}` : ""}</span>
+          </div>
+          <span class="spacer"></span>
+          <button class="btn small" data-open="${s.id}">Fill in now</button>
+        </div>
+      </div>`).join("")}<h2>Ended</h2>` : "";
+    if (!S.queue.length) {
+      vb.innerHTML = `${liveHtml}<div class="card empty">All caught up. No sessions are waiting for details.</div>`;
+      $$("[data-open]", vb).forEach((b) => (b.onclick = () => openSessionForm(b.dataset.open)));
+      return;
+    }
+    vb.innerHTML = liveHtml + S.queue.map((s) => `
       <div class="card">
         <div class="row">
           <div class="session-head">
@@ -291,7 +322,7 @@ async function openSessionForm(id) {
         </label>
       </div>
       <div class="grid" style="margin-top:12px">
-        <label>Vehicle make<select name="vehicle">${options(keepList(S.vehicleMakes, s.vehicle_make).map((x) => ({ value: x, label: x })), s.vehicle_make || "", "Choose vehicle make")}</select></label>
+        <label>Vehicle make<select name="vehicle"></select></label>
         <label>Engine make<select name="make"></select></label>
         <label>Engine model<select name="model"></select></label>
         <label>ECM type<select name="ecm"></select></label>
@@ -309,7 +340,7 @@ async function openSessionForm(id) {
       <label style="margin-top:12px">Notes<textarea name="notes">${esc(s.notes)}</textarea></label>
       <p class="err" id="sf-err"></p>
       <div class="row"><span class="spacer"></span>
-        ${s.status === "needs_details" ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
+        ${["needs_details", "active"].includes(s.status) ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
         <button type="button" class="btn ghost" id="sf-cancel">Cancel</button>
         <button class="btn" id="sf-save">Save job</button>
       </div>
@@ -341,7 +372,7 @@ async function openSessionForm(id) {
       drawOrig();
     }
     if (o && !f.vehicle.value && !f.make.value) {
-      f.vehicle.innerHTML = options(keepList(S.vehicleMakes, o.vehicle_make).map((x) => ({ value: x, label: x })), o.vehicle_make || "", "Choose vehicle make");
+      fillVehicle(o.vehicle_make || "");
       fill(f.make, keep(S.engines.map((m) => m.name), o.engine_make), o.engine_make || "", "Choose make");
       fillModel(o.engine_model || "", o.ecm_type || "");
     }
@@ -364,7 +395,15 @@ async function openSessionForm(id) {
   // Make -> model -> ECM: each choice limits the next list. A stored value that is no
   // longer in the list stays selectable so editing an old job doesn't lose it.
   const keep = keepList;
-  const fill = (sel, list, v, ph) => (sel.innerHTML = options(list.map((x) => ({ value: x, label: x })), v, ph));
+  // Each list ends with "+ Add…", which saves a new entry to the Lists tab and picks it.
+  // A model needs a make chosen first, and an ECM type a model.
+  const ADD = "__add";
+  const addLabel = { vehicle: "vehicle make", make: "engine make", model: "engine model", ecm: "ECM type" };
+  const fill = (sel, list, v, ph) => {
+    sel.innerHTML = options(list.map((x) => ({ value: x, label: x })), v, ph);
+    if ((sel.name === "model" && !make()) || (sel.name === "ecm" && !model())) return;
+    sel.insertAdjacentHTML("beforeend", `<option value="${ADD}">+ Add ${addLabel[sel.name]}…</option>`);
+  };
   const make = () => S.engines.find((m) => m.name === f.make.value);
   const model = () => make()?.models?.find((m) => m.name === f.model.value);
   const fillEcm = (v) => fill(f.ecm, keep(model()?.ecms || [], v), v, model() || v ? "Choose ECM" : "Choose a model first");
@@ -374,8 +413,72 @@ async function openSessionForm(id) {
   };
   fill(f.make, keep(S.engines.map((m) => m.name), s.engine_make), s.engine_make || "", "Choose make");
   fillModel(s.engine_model || "", s.ecm_type || "");
-  f.make.onchange = () => fillModel("", "");
-  f.model.onchange = () => fillEcm("");
+  const fillVehicle = (v) => fill(f.vehicle, keep(S.vehicleMakes, v), v, "Choose vehicle make");
+  fillVehicle(s.vehicle_make || "");
+  f.vehicle.dataset.prev = s.vehicle_make || "";
+  f.make.dataset.prev = s.engine_make || "";
+  f.model.dataset.prev = s.engine_model || "";
+  f.ecm.dataset.prev = s.ecm_type || "";
+  // Returns the typed name, or "" (with the list put back as it was) when cancelled.
+  const askNew = (sel, refill) => {
+    const name = prompt(`New ${addLabel[sel.name]}`)?.trim() || "";
+    if (!name) refill(sel.dataset.prev || "");
+    return name;
+  };
+  const sameName = (list, name) => list.find((x) => x.toLowerCase() === name.toLowerCase());
+  const saveModels = (m, models) => db.doc(`engine_makes/${m.id}`).update({ models });
+  const copyModels = (m) => (m.models || []).map((x) => ({ name: x.name, ecms: [...(x.ecms || [])] }));
+  f.vehicle.onchange = async () => {
+    if (f.vehicle.value !== ADD) return (f.vehicle.dataset.prev = f.vehicle.value);
+    const name = askNew(f.vehicle, fillVehicle);
+    if (!name) return;
+    const v = sameName(S.vehicleMakes, name) || name;
+    if (v === name) await db.doc("lists/vehicle_makes").set({ items: [...S.vehicleMakes, name] });
+    fillVehicle(v);
+    f.vehicle.dataset.prev = v;
+  };
+  f.make.onchange = async () => {
+    const refill = (v) => fill(f.make, keep(S.engines.map((m) => m.name), v), v, "Choose make");
+    if (f.make.value === ADD) {
+      const name = askNew(f.make, refill);
+      if (!name) return;
+      const v = sameName(S.engines.map((m) => m.name), name) || name;
+      if (v === name) {
+        await db.collection("engine_makes").add({ name, folder: name, file_prefix: name.replace(/[^A-Za-z0-9]/g, "").slice(0, 3).toUpperCase(), models: [] });
+      }
+      refill(v);
+    }
+    f.make.dataset.prev = f.make.value;
+    fillModel("", "");
+  };
+  f.model.onchange = async () => {
+    if (f.model.value === ADD) {
+      const m = make();
+      const name = askNew(f.model, (v) => fillModel(v, f.ecm.value));
+      if (!name || !m) return;
+      const list = copyModels(m);
+      const v = sameName(list.map((x) => x.name), name) || name;
+      if (v === name) await saveModels(m, [...list, { name, ecms: [] }]);
+      fill(f.model, keep((make()?.models || []).map((x) => x.name), v), v, "Choose model");
+    }
+    f.model.dataset.prev = f.model.value;
+    fillEcm("");
+  };
+  f.ecm.onchange = async () => {
+    if (f.ecm.value !== ADD) return (f.ecm.dataset.prev = f.ecm.value);
+    const m = make();
+    const name = askNew(f.ecm, fillEcm);
+    if (!name || !m || !model()) return;
+    const list = copyModels(m);
+    const entry = list.find((x) => x.name === f.model.value);
+    const v = sameName(entry.ecms, name) || name;
+    if (v === name) {
+      entry.ecms.push(name);
+      await saveModels(m, list);
+    }
+    fillEcm(v);
+    f.ecm.dataset.prev = v;
+  };
 
   filePicker(f.filesearch, $("#filechips"), files, 0, () => f.make.value);
   const drawOrig = filePicker(f.origsearch, $("#origchips"), origFiles, 1, () => f.make.value);
