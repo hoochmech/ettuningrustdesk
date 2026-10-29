@@ -63,8 +63,17 @@ TOPIC="xdrive-files"
 gcloud pubsub topics describe "$TOPIC" --project "$PROJECT" >/dev/null 2>&1 \
   || gcloud pubsub topics create "$TOPIC" --project "$PROJECT" >/dev/null || fail "creating Pub/Sub topic $TOPIC failed."
 gs_agent=$(gcloud storage service-agent --project "$bucket_project") || fail "cannot read the storage agent of $bucket_project."
-gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project "$PROJECT" --member "serviceAccount:$gs_agent" \
-  --role roles/pubsub.publisher --quiet >/dev/null || fail "letting the bucket publish to $TOPIC failed."
+# Google creates the storage agent the first time it's asked for, and IAM can take a
+# minute or two to see a new one.
+granted=""
+for _ in $(seq 1 12); do
+  if gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project "$PROJECT" --member "serviceAccount:$gs_agent" \
+      --role roles/pubsub.publisher --quiet >/dev/null 2>&1; then granted=1; break; fi
+  echo "  waiting for $gs_agent to become visible..."
+  sleep 15
+done
+[ -n "$granted" ] || fail "letting the bucket publish to $TOPIC failed. Wait a few minutes and run this script again."
+ok "bucket may publish to $TOPIC"
 if gcloud storage buckets notifications list "gs://$BUCKET" --format=json 2>/dev/null | grep -q "projects/$PROJECT/topics/$TOPIC"; then
   ok "bucket notification already set"
 else
