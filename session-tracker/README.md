@@ -36,8 +36,10 @@ closes either. Saved jobs can't be removed this way.
 
 The job form can also be filled in while the session is still going: "Fill in now"
 under "In progress" on the queue page, or the clipboard button ("Job form") in the
-client's remote toolbar, which opens the dashboard at `#device=<remote ID>`. A job saved
-early stays complete when the session closes.
+client's remote toolbar, which opens the dashboard at `#device=<remote ID>` with the form
+for that computer's latest session (still going, waiting for details, or already saved),
+so it can be opened and edited any number of times. Closing a logged-in remote desktop
+session opens the same form. A job saved early stays complete when the session closes.
 
 Vehicle make, engine make, engine model and ECM type lists end in "+ Add…" on the job
 form, which saves the new entry to the Lists tab and picks it. A make added this way
@@ -53,12 +55,16 @@ login) with an empty 404, which the client ignores, so idle heartbeats cost noth
 
 ## X: drive file IDs
 
-Each engine make has a top-level folder on the X: drive and an ID prefix (Lists tab;
-defaults `Cummins/` CUM, `Duramax/` DMX, `Power Stroke/` PSD). A file added anywhere
-under a make's folder is renamed to carry the next ID for that make:
-`Cummins/6.7L/Stage 2.bin` → `Cummins/6.7L/Stage 2_CUM-00042.bin`. The ID is also
-stored on the object as `et_file_id` metadata. Files in other folders (`Software/`,
-customer `Uploads/`) are left alone.
+Tune files live under `Files/` on the X: drive, in a folder per engine make (Lists tab;
+defaults `Cummins` CUM, `Duramax` DMX, `Power Stroke` PSD) with a folder per engine model
+and ECM type inside it. Adding a make, model or ECM type, on the Lists tab or with
+"+ Add…" on the job form, creates its folder (`engineMakeFolders` function); removing one
+leaves the folder, since it may hold files. A file added anywhere under a make's folder
+is renamed to carry the next ID for that make:
+`Files/Cummins/6.7L/CM2350B/Stage 2.bin` → `Files/Cummins/6.7L/CM2350B/Stage 2_CUM-00042.bin`.
+The ID is also stored on the object as `et_file_id` metadata. Files in other folders
+(`Software/`, customer `Uploads/`) are left alone. `backfill-files.js --apply` creates the
+folders for makes that were on the Lists tab before the function was deployed.
 
 ## Data
 

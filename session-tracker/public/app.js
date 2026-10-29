@@ -153,11 +153,15 @@ function onData() {
     const rid = pendingDeviceLink;
     pendingDeviceLink = null;
     history.replaceState(null, "", `#${S.view}`);
+    // The latest session on that computer, whether it is still going, just ended, or
+    // already has its details saved, so the form can be opened again at any point.
     // Asked of the server: the first S.sessions snapshot can come from the local cache.
-    db.collection("sessions").where("rustdesk_id", "==", rid).where("status", "==", "active").get().then((snap) => {
-      const live = snap.docs.sort((a, b) => (toDate(b.get("started_at")) || 0) - (toDate(a.get("started_at")) || 0))[0];
-      if (live) openSessionForm(live.id);
-      else alert(`No session is in progress on ${rid} yet. It shows up here a few seconds after you connect.`);
+    db.collection("sessions").where("rustdesk_id", "==", rid).where("status", "in", ["active", "needs_details", "complete"]).get().then((snap) => {
+      // A file transfer window is its own connection; the remote desktop one is the job.
+      const latest = snap.docs.sort((a, b) => (a.get("conn_type") === 0 ? 0 : 1) - (b.get("conn_type") === 0 ? 0 : 1) ||
+        (toDate(b.get("started_at")) || 0) - (toDate(a.get("started_at")) || 0))[0];
+      if (latest && Date.now() - (toDate(latest.get("started_at"))?.getTime() ?? 0) < 24 * 3600 * 1000) openSessionForm(latest.id);
+      else alert(`No session on ${rid} yet. It shows up here a few seconds after you connect.`);
     });
   }
   VIEWS[S.view].body();
@@ -785,7 +789,7 @@ VIEWS.devices = {
 // ---------- files ----------
 VIEWS.files = {
   shell: () => `<h1>X: drive files</h1>
-    <p class="muted small">Files put in an engine make's folder on the X: drive get an ID for that make added to their name, e.g. <code>Stage 2_CUM-00042.bin</code>. Pick it on the job form to record which file a job used. Other folders, such as Software and Uploads, don't get IDs.</p>
+    <p class="muted small">Files put in an engine make's folder under Files on the X: drive (e.g. <code>Files\\Cummins\\6.7L\\CM2350B</code>) get an ID for that make added to their name, e.g. <code>Stage 2_CUM-00042.bin</code>. Pick it on the job form to record which file a job used. Other folders, such as Software and Uploads, don't get IDs.</p>
     <div class="card"><input id="fq2" value="${esc(S.filters.files)}" placeholder="Search by file ID, name or folder"></div><div id="vb"></div>`,
   bind() {
     $("#fq2").oninput = (e) => { S.filters.files = e.target.value; this.body(); };
@@ -815,7 +819,7 @@ VIEWS.settings = {
       <p class="muted small">One per line.</p>
       <textarea id="vmakes" rows="6"></textarea></div>
     <div class="card"><div class="row"><h2>Engines</h2><span class="spacer"></span><button class="btn small" id="addmake">Add make</button></div>
-      <p class="muted small">Each make lists its engine models, and each model its ECM types; the job form offers them in that order. Model and ECM changes save as you make them; Save stores the make's name, X: drive folder and file ID prefix. The folder is where this make's tune files go on the X: drive, and the prefix starts their IDs. Changing a prefix only affects files added afterwards.</p>
+      <p class="muted small">Each make lists its engine models, and each model its ECM types; the job form offers them in that order. Model and ECM changes save as you make them; Save stores the make's name, X: drive folder and file ID prefix. The folder is where this make's tune files go under Files on the X: drive, and the prefix starts their IDs. Adding a make, model or ECM type creates its folder there (Files\\Make\\Model\\ECM); removing one leaves the folder alone. Changing a prefix only affects files added afterwards.</p>
       <div id="makes"></div></div>`,
   bind() {
     $("#addcat").onclick = async () => {
