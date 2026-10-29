@@ -121,12 +121,6 @@ echo "== 6/7 Deploying (functions take a few minutes the first time)"
 $FB deploy --only functions,firestore,hosting:sessions --project "$PROJECT" --non-interactive --force \
   || fail "deploy failed (see above). Running this script again usually gets past first-deploy permission delays."
 ok "deployed"
-# The client posts without credentials. Firebase normally makes `api` public on deploy,
-# but when that step is skipped every report gets a 403, so make sure here.
-gcloud run services add-iam-policy-binding api --region us-central1 --project "$PROJECT" \
-  --member=allUsers --role=roles/run.invoker --quiet >/dev/null \
-  && ok "session reports can reach the api function" \
-  || note "couldn't allow public calls to the api function, so PCs can't report sessions. An organization policy (iam.allowedPolicyMemberDomains) may be blocking allUsers."
 
 echo "== 7/7 Files already on the X: drive"
 gcloud auth application-default print-access-token >/dev/null 2>&1 || gcloud auth application-default login --quiet
