@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ET Tuning Sessions</title>
+<link rel="icon" href="/logo.jpg">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header>
+  <img src="/logo.jpg" alt="East Texas Tuning" class="logo">
+  <nav id="tabs" hidden>
+    <button data-view="queue">Needs details <span id="queue-count" class="badge"></span></button>
+    <button data-view="sessions">Sessions</button>
+    <button data-view="customers">Customers</button>
+    <button data-view="devices">Devices</button>
+    <button data-view="files">X: drive files</button>
+    <button data-view="settings">Lists</button>
+  </nav>
+  <div id="who"></div>
+</header>
+<main id="app">
+  <section id="signin" class="card center">
+    <h1>ET Tuning Sessions</h1>
+    <p class="muted" id="signin-msg">Sign in with your staff Google account.</p>
+    <button id="signin-btn" class="btn">Sign in with Google</button>
+  </section>
+  <section id="view"></section>
+</main>
+<dialog id="dlg"><div id="dlg-body"></div></dialog>
+<script src="/__/firebase/10.14.1/firebase-app-compat.js"></script>
+<script src="/__/firebase/10.14.1/firebase-auth-compat.js"></script>
+<script src="/__/firebase/10.14.1/firebase-firestore-compat.js"></script>
+<script src="/__/firebase/init.js"></script>
+<script src="/defaults.js"></script>
+<script src="/app.js"></script>
+</body>
+</html>

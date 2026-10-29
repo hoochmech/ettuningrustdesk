@@ -1,0 +1,24 @@
+{
+  "hosting": {
+    "target": "sessions",
+    "public": "public",
+    "cleanUrls": true,
+    "rewrites": [
+      { "source": "/api/audit/conn", "function": { "functionId": "api", "region": "us-central1" } },
+      { "source": "/api/sysinfo", "function": { "functionId": "api", "region": "us-central1" } },
+      { "source": "/api/forget", "function": { "functionId": "api", "region": "us-central1" } }
+    ],
+    "headers": [
+      { "source": "**/*.@(js|css|html)", "headers": [{ "key": "Cache-Control", "value": "no-cache" }] }
+    ]
+  },
+  "functions": {
+    "source": "functions",
+    "runtime": "nodejs22",
+    "ignore": ["node_modules", "*.test.js", "backfill-files.js"]
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  }
+}
