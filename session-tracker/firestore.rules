@@ -36,7 +36,7 @@ service cloud.firestore {
       allow read: if isStaff();
       allow update: if isStaff()
         && onlyChanges(['customer_id', 'category_id', 'category_name', 'billable', 'warranty_issue',
-                        'original_job_id', 'original_job_pre_tracking', 'original_job_note',
+                        'original_job_id', 'original_job_pre_tracking', 'original_job_note', 'original_file',
                         'vehicle_make', 'engine_make', 'engine_model', 'ecm_type', 'files', 'file_ids', 'notes',
                         'status', 'completed_at', 'completed_by', 'merged_into'])
         && request.resource.data.status in ['needs_details', 'complete', 'dismissed', 'merged'];

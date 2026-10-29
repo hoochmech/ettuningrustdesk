@@ -86,6 +86,7 @@ function applyConnEvent(open, ev, now, customerId) {
       original_job_id: null,
       original_job_pre_tracking: false,
       original_job_note: "",
+      original_file: null,
       vehicle_make: "",
       engine_make: "",
       engine_model: "",

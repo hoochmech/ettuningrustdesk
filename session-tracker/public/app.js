@@ -247,6 +247,7 @@ async function openSessionForm(id) {
   const custId = s.customer_id || device?.customer_id || "";
   const cats = S.categories.filter((c) => c.active !== false || c.id === s.category_id);
   const files = [...(s.files || [])];
+  const origFiles = s.original_file ? [s.original_file] : [];
 
   openDialog(`
     <h2>Job details</h2>
@@ -295,6 +296,12 @@ async function openSessionForm(id) {
         <label>Engine model<select name="model"></select></label>
         <label>ECM type<select name="ecm"></select></label>
       </div>
+      <div id="origfile-wrap" hidden>
+        <label style="margin-top:12px">Original file used (X: drive)
+          <div class="picker"><input name="origsearch" placeholder="The file the earlier tune used: ID or part of the name" autocomplete="off"><div class="picker-list" hidden></div></div>
+        </label>
+        <div class="chips" id="origchips"></div>
+      </div>
       <label style="margin-top:12px">File used (X: drive)
         <div class="picker"><input name="filesearch" placeholder="Type a file ID like CUM-00042 or part of the name" autocomplete="off"><div class="picker-list" hidden></div></div>
       </label>
@@ -329,6 +336,10 @@ async function openSessionForm(id) {
     $("#pre-wrap").hidden = f.original.value !== PRE;
     // Same truck as the original job, so start from its vehicle and engine.
     const o = findSession(f.original.value);
+    if (o?.files?.length && !origFiles.length) {
+      origFiles.push(o.files[0]);
+      drawOrig();
+    }
     if (o && !f.vehicle.value && !f.make.value) {
       f.vehicle.innerHTML = options(keepList(S.vehicleMakes, o.vehicle_make).map((x) => ({ value: x, label: x })), o.vehicle_make || "", "Choose vehicle make");
       fill(f.make, keep(S.engines.map((m) => m.name), o.engine_make), o.engine_make || "", "Choose make");
@@ -342,7 +353,11 @@ async function openSessionForm(id) {
   fillOriginal();
 
   const issueWrap = $("#issue-wrap");
-  const syncIssue = () => (issueWrap.hidden = !byId(S.categories, f.category.value)?.requires_issue);
+  const syncIssue = () => {
+    const c = byId(S.categories, f.category.value);
+    issueWrap.hidden = !c?.requires_issue;
+    $("#origfile-wrap").hidden = !asksOriginalFile(c);
+  };
   f.category.onchange = syncIssue;
   syncIssue();
 
@@ -362,34 +377,8 @@ async function openSessionForm(id) {
   f.make.onchange = () => fillModel("", "");
   f.model.onchange = () => fillEcm("");
 
-  const chips = $("#filechips");
-  const drawChips = () => {
-    chips.innerHTML = files.map((x, i) => `<span class="chip">${esc(x.file_id)} · ${esc(x.name)}<button type="button" data-i="${i}" title="Remove">×</button></span>`).join("");
-    $$("button", chips).forEach((b) => (b.onclick = () => { files.splice(+b.dataset.i, 1); drawChips(); }));
-  };
-  drawChips();
-  const search = f.filesearch;
-  const list = $(".picker-list", f);
-  search.oninput = () => {
-    const q = search.value.trim().toLowerCase();
-    if (!q) { list.hidden = true; return; }
-    const mk = f.make.value;
-    const hits = S.files.filter((x) => !files.some((y) => y.file_id === x.file_id) &&
-      (x.file_id.toLowerCase().includes(q) || x.path.toLowerCase().includes(q)))
-      .sort((a, b) => (b.make === mk) - (a.make === mk)).slice(0, 12);
-    list.innerHTML = hits.length
-      ? hits.map((x) => `<div data-id="${esc(x.file_id)}"><b>${esc(x.file_id)}</b> ${esc(x.name)} <span class="muted small">${esc(x.folder)}</span></div>`).join("")
-      : `<div class="muted">No matching files</div>`;
-    list.hidden = false;
-    $$("[data-id]", list).forEach((d) => (d.onclick = () => {
-      const x = S.files.find((y) => y.file_id === d.dataset.id);
-      files.push({ file_id: x.file_id, name: x.name, path: x.path });
-      search.value = "";
-      list.hidden = true;
-      drawChips();
-    }));
-  };
-  search.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
+  filePicker(f.filesearch, $("#filechips"), files, 0, () => f.make.value);
+  const drawOrig = filePicker(f.origsearch, $("#origchips"), origFiles, 1, () => f.make.value);
 
   $("#sf-cancel").onclick = closeDialog;
   if ($("#sf-skip")) $("#sf-skip").onclick = async () => { if (await dismissSession(s.id)) closeDialog(); };
@@ -434,6 +423,7 @@ async function openSessionForm(id) {
       ecm_type: f.ecm.value,
       files,
       file_ids: files.map((x) => x.file_id),
+      original_file: asksOriginalFile(cat) ? origFiles[0] || null : null,
       notes: f.notes.value.trim(),
       status: "complete",
       ...done,
@@ -470,6 +460,44 @@ function keepList(list, v) {
   return v && !list.includes(v) ? [v, ...list] : list;
 }
 
+// Searchable X: drive file list that adds picks to `picked` as chips. `max` 0 means no
+// limit; with 1, a new pick replaces the old one. Returns a function that redraws the chips.
+function filePicker(search, chips, picked, max, currentMake) {
+  const list = search.parentElement.querySelector(".picker-list");
+  const draw = () => {
+    chips.innerHTML = picked.map((x, i) => `<span class="chip">${esc(x.file_id)} · ${esc(x.name)}<button type="button" data-i="${i}" title="Remove">×</button></span>`).join("");
+    $$("button", chips).forEach((b) => (b.onclick = () => { picked.splice(+b.dataset.i, 1); draw(); }));
+  };
+  draw();
+  search.oninput = () => {
+    const q = search.value.trim().toLowerCase();
+    if (!q) { list.hidden = true; return; }
+    const mk = currentMake();
+    const hits = S.files.filter((x) => !picked.some((y) => y.file_id === x.file_id) &&
+      (x.file_id.toLowerCase().includes(q) || x.path.toLowerCase().includes(q)))
+      .sort((a, b) => (b.make === mk) - (a.make === mk)).slice(0, 12);
+    list.innerHTML = hits.length
+      ? hits.map((x) => `<div data-id="${esc(x.file_id)}"><b>${esc(x.file_id)}</b> ${esc(x.name)} <span class="muted small">${esc(x.folder)}</span></div>`).join("")
+      : `<div class="muted">No matching files</div>`;
+    list.hidden = false;
+    $$("[data-id]", list).forEach((d) => (d.onclick = () => {
+      const x = S.files.find((y) => y.file_id === d.dataset.id);
+      if (max && picked.length >= max) picked.splice(0, picked.length);
+      picked.push({ file_id: x.file_id, name: x.name, path: x.path });
+      search.value = "";
+      list.hidden = true;
+      draw();
+    }));
+  };
+  search.onkeydown = (e) => { if (e.key === "Enter") e.preventDefault(); };
+  return draw;
+}
+
+// Categories made before this setting existed fall back to asking for Warranty and Tune revision.
+function asksOriginalFile(c) {
+  return !!c && (c.asks_original_file ?? /^(warranty|tune revision)$/i.test(c.name));
+}
+
 // ---------- sessions ----------
 VIEWS.sessions = {
   shell: () => {
@@ -504,7 +532,7 @@ VIEWS.sessions = {
       if (fl.billable && s.billable !== (fl.billable === "yes")) return false;
       if (!q) return true;
       return [customerName(s.customer_id), deviceLabel(s.rustdesk_id), s.technician_name, s.notes, s.warranty_issue,
-        s.vehicle_make, s.engine_make, s.engine_model, s.ecm_type, ...(s.file_ids || [])].join(" ").toLowerCase().includes(q);
+        s.vehicle_make, s.engine_make, s.engine_model, s.ecm_type, ...(s.file_ids || []), s.original_file?.file_id].join(" ").toLowerCase().includes(q);
     });
   },
   body() {
@@ -542,6 +570,7 @@ function exportCsv(rows) {
     ["Category", (s) => categoryName(s.category_id) || s.category_name || ""],
     ["Billable", (s) => (s.billable === true ? "Yes" : s.billable === false ? "No" : "")],
     ["Warranty issue", (s) => s.warranty_issue],
+    ["Original file", (s) => s.original_file?.file_id || ""],
     ["Original job", (s) => (s.original_job_pre_tracking ? `Before tracking: ${s.original_job_note || ""}` : s.original_job_id ? toDate(findSession(s.original_job_id)?.started_at)?.toISOString() || s.original_job_id : "")],
     ["Vehicle make", (s) => s.vehicle_make],
     ["Engine make", (s) => s.engine_make], ["Engine model", (s) => s.engine_model], ["ECM", (s) => s.ecm_type],
@@ -669,7 +698,7 @@ VIEWS.files = {
 VIEWS.settings = {
   shell: () => `<h1>Lists</h1>
     <div class="card"><div class="row"><h2>Work categories</h2><span class="spacer"></span><button class="btn small" id="addcat">Add category</button></div>
-      <p class="muted small">"Asks for issue" shows the issue box on the job form, as Warranty does. Turning a category off hides it from new jobs but keeps old ones.</p>
+      <p class="muted small">"Asks for issue" shows the original-job and issue boxes on the job form, as Warranty does. "Asks for original file" shows a picker for the file the earlier tune used, as Warranty and Tune revision do. Turning a category off hides it from new jobs but keeps old ones.</p>
       <div id="cats"></div></div>
     <div class="card"><div class="row"><h2>Vehicle makes</h2><span class="spacer"></span><button class="btn small" id="savevm">Save</button></div>
       <p class="muted small">One per line.</p>
@@ -696,12 +725,14 @@ VIEWS.settings = {
   body() {
     const cats = $("#cats");
     if (!cats) return;
-    cats.innerHTML = `<table><tr><th>Name</th><th>Asks for issue</th><th>In use</th></tr>
+    cats.innerHTML = `<table><tr><th>Name</th><th>Asks for issue</th><th>Asks for original file</th><th>In use</th></tr>
       ${S.categories.map((c) => `<tr><td><input data-cname="${c.id}" value="${esc(c.name)}"></td>
         <td><input type="checkbox" data-cissue="${c.id}"${c.requires_issue ? " checked" : ""}></td>
+        <td><input type="checkbox" data-corig="${c.id}"${asksOriginalFile(c) ? " checked" : ""}></td>
         <td><input type="checkbox" data-cactive="${c.id}"${c.active !== false ? " checked" : ""}></td></tr>`).join("")}</table>`;
     $$("[data-cname]", cats).forEach((i) => (i.onchange = () => i.value.trim() && db.doc(`work_categories/${i.dataset.cname}`).update({ name: i.value.trim() })));
     $$("[data-cissue]", cats).forEach((i) => (i.onchange = () => db.doc(`work_categories/${i.dataset.cissue}`).update({ requires_issue: i.checked })));
+    $$("[data-corig]", cats).forEach((i) => (i.onchange = () => db.doc(`work_categories/${i.dataset.corig}`).update({ asks_original_file: i.checked })));
     $$("[data-cactive]", cats).forEach((i) => (i.onchange = () => db.doc(`work_categories/${i.dataset.cactive}`).update({ active: i.checked })));
 
     const vm = $("#vmakes");
