@@ -51,19 +51,33 @@ code=$(curl -s -o /tmp/staff.json -w "%{http_code}" -X PATCH \
 ok "$EMAIL can sign in"
 
 echo "== 4/7 X: drive bucket"
-loc=$(gcloud storage buckets describe "gs://$BUCKET" --format='value(location)' 2>/dev/null)
-if [ -z "$loc" ]; then
-  fail "cannot read gs://$BUCKET. It must exist in project $PROJECT for file IDs to work."
+bucket_number=$(curl -s -H "Authorization: Bearer $(gcloud auth print-access-token)" \
+  "https://storage.googleapis.com/storage/v1/b/$BUCKET?fields=projectNumber" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin).get("projectNumber", ""))' 2>/dev/null)
+[ -n "$bucket_number" ] || fail "cannot read gs://$BUCKET. Check the name and that your account can see it."
+bucket_project=$(gcloud projects describe "$bucket_number" --format='value(projectId)') || fail "cannot read project $bucket_number."
+ok "bucket is in project $bucket_project"
+# The bucket reports adds and deletes to a Pub/Sub topic here, which the xdriveFileChanged
+# function listens on. This works whether or not the bucket is in this project.
+TOPIC="xdrive-files"
+gcloud pubsub topics describe "$TOPIC" --project "$PROJECT" >/dev/null 2>&1 \
+  || gcloud pubsub topics create "$TOPIC" --project "$PROJECT" >/dev/null || fail "creating Pub/Sub topic $TOPIC failed."
+gs_agent=$(gcloud storage service-agent --project "$bucket_project") || fail "cannot read the storage agent of $bucket_project."
+gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project "$PROJECT" --member "serviceAccount:$gs_agent" \
+  --role roles/pubsub.publisher --quiet >/dev/null || fail "letting the bucket publish to $TOPIC failed."
+if gcloud storage buckets notifications list "gs://$BUCKET" --format=json 2>/dev/null | grep -q "projects/$PROJECT/topics/$TOPIC"; then
+  ok "bucket notification already set"
+else
+  gcloud storage buckets notifications create "gs://$BUCKET" --topic="projects/$PROJECT/topics/$TOPIC" \
+    --payload-format=json --event-types=OBJECT_FINALIZE,OBJECT_DELETE >/dev/null || fail "creating the bucket notification failed."
+  ok "bucket notification created"
 fi
-case "$(echo "$loc" | tr '[:upper:]' '[:lower:]')" in
-  us|us-central1|nam4) ok "bucket location $loc works with $REGION" ;;
-  *) fail "bucket is in $loc. Change REGION in functions/index.js, firebase.json and this script to match it." ;;
-esac
-# Cloud Storage publishes upload events through Pub/Sub.
-gs_agent=$(gcloud storage service-agent --project "$PROJECT")
-gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$gs_agent" \
-  --role roles/pubsub.publisher --condition=None --quiet >/dev/null || fail "granting Pub/Sub to the storage agent failed."
-ok "storage events allowed"
+# The function renames new files to add their ID, so its account needs write access to the bucket.
+number=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
+gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+  --member "serviceAccount:$number-compute@developer.gserviceaccount.com" \
+  --role roles/storage.objectAdmin >/dev/null || fail "giving the functions write access to gs://$BUCKET failed."
+ok "functions can rename files in gs://$BUCKET"
 
 echo "== 5/7 Firebase sign-in, hosting site and web app"
 $FB projects:list >/dev/null 2>&1 || $FB login --no-localhost || fail "Firebase sign-in failed."

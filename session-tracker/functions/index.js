@@ -96,19 +96,25 @@ async function handleSysinfo(body) {
   );
 }
 
-const { onObjectFinalized, onObjectDeleted } = require("firebase-functions/v2/storage");
+// The X: drive bucket lives in another project, so its changes arrive through a
+// Cloud Storage notification on this Pub/Sub topic (set up by setup.sh) rather than
+// a storage trigger, which only works for buckets in the function's own project.
+const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { getStorage } = require("firebase-admin/storage");
-const { XDRIVE_BUCKET, registerFile, renameToId, markDeleted } = require("./files");
+const { XDRIVE_TOPIC, registerFile, renameToId, markDeleted } = require("./files");
 
-exports.xdriveFileAdded = onObjectFinalized(
-  { bucket: XDRIVE_BUCKET, region: "us-central1", memory: "256MiB" },
+exports.xdriveFileChanged = onMessagePublished(
+  { topic: XDRIVE_TOPIC, region: "us-central1", memory: "256MiB" },
   async (event) => {
-    const reg = await registerFile(db, event.data);
-    if (reg?.renameTo) await renameToId(getStorage().bucket(event.data.bucket), event.data, reg.id, reg.renameTo);
+    const attrs = event.data.message.attributes || {};
+    const obj = event.data.message.json;
+    if (!obj?.name) return;
+    if (attrs.eventType === "OBJECT_FINALIZE") {
+      const reg = await registerFile(db, obj);
+      if (reg?.renameTo) await renameToId(getStorage().bucket(obj.bucket), obj, reg.id, reg.renameTo);
+    } else if (attrs.eventType === "OBJECT_DELETE" && !attrs.overwrittenByGeneration) {
+      // An overwrite also deletes the old generation; the new one keeps the file's ID.
+      await markDeleted(db, obj);
+    }
   },
-);
-
-exports.xdriveFileDeleted = onObjectDeleted(
-  { bucket: XDRIVE_BUCKET, region: "us-central1", memory: "256MiB" },
-  async (event) => markDeleted(db, event.data),
 );

@@ -11,7 +11,7 @@ Runs on Firebase in the `rustdesk-api-482222` project:
 | Piece | What it does |
 | --- | --- |
 | `functions/index.js` `api` | Receives the session reports clients send to their API server (`/api/audit/conn`, `/api/sysinfo`) |
-| `functions/index.js` `xdriveFileAdded` / `xdriveFileDeleted` | Give X: drive tune files their IDs |
+| `functions/index.js` `xdriveFileChanged` | Gives X: drive tune files their IDs. The bucket sends its adds and deletes to the `xdrive-files` Pub/Sub topic, so it can live in another project |
 | `public/` | The dashboard, at `https://rustdesk-api-482222-sessions.web.app` |
 | `firestore.rules` | Only people on the staff list can read or edit |
 
