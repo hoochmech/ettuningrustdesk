@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_hbb/branding.dart';
 import 'package:flutter_hbb/common.dart';
 import 'package:flutter_hbb/models/platform_model.dart';
 import 'package:get/get.dart';
@@ -67,6 +68,29 @@ Future<void> handleUpdate(String releasePageUrl) async {
           }, isOutline: true),
         ]);
   });
+}
+
+/// Updates are required in this build, so a new version is offered in a dialog with
+/// no way to dismiss it.
+void showRequiredUpdate(String releasePageUrl) {
+  final canInstall = (isWindows || isMacOS) && bind.mainIsInstalled();
+  gFFI.dialogManager.show(
+    (setState, close, context) => CustomAlertDialog(
+      title: Text(translate('Update required')),
+      content: Text(
+          '$kAppDisplayName ${bind.mainGetNewVersion()} ${translate('is available. Install it to keep using this app.')}'),
+      actions: [
+        dialogButton(canInstall ? 'Update' : 'Download', onPressed: () {
+          if (canInstall) {
+            handleUpdate(releasePageUrl);
+          } else {
+            launchUrl(Uri.parse(releasePageUrl));
+          }
+        }),
+      ],
+    ),
+    tag: 'required-update',
+  );
 }
 
 Future<T?> waitForUpdateVerification<T extends Object>(

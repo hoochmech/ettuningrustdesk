@@ -40,7 +40,7 @@ pub fn latest_release_api_url() -> String {
     format!("https://api.github.com/repos/{UPDATE_REPO_OWNER}/{UPDATE_REPO_NAME}/releases/latest")
 }
 
-/// Applies the app name, locks the server settings and sets our install defaults,
+/// Applies the app name, locks the server and update settings and sets our install defaults,
 /// before anything reads them.
 pub fn apply() {
     *config::APP_NAME.write().unwrap() = APP_NAME.to_owned();
@@ -50,10 +50,17 @@ pub fn apply() {
         (keys::OPTION_RELAY_SERVER, RELAY_SERVER),
         (keys::OPTION_KEY, SERVER_PUB_KEY),
         (keys::OPTION_API_SERVER, API_SERVER),
+        // Updates are required: the service installs them on its own whenever no
+        // session is active.
+        (keys::OPTION_ALLOW_AUTO_UPDATE, "Y"),
     ] {
         overwrite.insert(k.to_owned(), v.to_owned());
     }
     drop(overwrite);
+    config::OVERWRITE_LOCAL_SETTINGS
+        .write()
+        .unwrap()
+        .insert(keys::OPTION_ENABLE_CHECK_UPDATE.to_owned(), "Y".to_owned());
     // Defaults, not overrides: the PC's owner can still turn these off in settings.
     config::DEFAULT_SETTINGS.write().unwrap().insert(
         keys::OPTION_ALLOW_REMOTE_CONFIG_MODIFICATION.to_owned(),
