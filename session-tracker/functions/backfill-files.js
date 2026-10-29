@@ -1,6 +1,6 @@
 // One-time: gives IDs to tune files that were already in the X: drive's engine-make
 // folders before the upload trigger was deployed, and creates the Files/ folders for the
-// makes, models and ECM types already on the Lists tab. Renaming appends the ID to the
+// makes, models and ECM types already on the Lists tab. Renaming puts the ID in front of the
 // name, so it only lists what it would do unless given --apply.
 // Safe to run again; files that already have an ID keep it.
 //   node backfill-files.js <project-id> [--apply]
