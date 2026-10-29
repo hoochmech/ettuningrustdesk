@@ -37,6 +37,10 @@ build_sa="$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
 gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$build_sa" \
   --role roles/cloudbuild.builds.builder --condition=None --quiet >/dev/null || fail "letting $build_sa build functions failed."
 ok "function builds allowed"
+# The same account runs the functions, which read and write Firestore.
+gcloud projects add-iam-policy-binding "$PROJECT" --member "serviceAccount:$build_sa" \
+  --role roles/datastore.user --condition=None --quiet >/dev/null || fail "giving $build_sa Firestore access failed."
+ok "functions can use Firestore"
 
 echo "== 2/7 Firestore database"
 if gcloud firestore databases describe --database='(default)' --project "$PROJECT" >/dev/null 2>&1; then
