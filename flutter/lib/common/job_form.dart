@@ -16,7 +16,7 @@ Future<void> openJobForm(String peerId) async {
 /// Opens the job form when a logged-in remote desktop session ends, so every
 /// session gets its details filled in (or reviewed, if they were saved during it).
 void openJobFormOnSessionEnd(FFI ffi, String peerId) {
-  if (ffi.connType != ConnType.defaultConn || !ffi.ffiModel.pi.isSet.isTrue) {
+  if (ffi.connType != ConnType.defaultConn || !ffi.ffiModel.pi.isSet.value) {
     return;
   }
   openJobForm(peerId);
