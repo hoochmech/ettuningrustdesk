@@ -83,7 +83,7 @@ fi
 number=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
 if gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
     --member "serviceAccount:$number-compute@developer.gserviceaccount.com" \
-    --role roles/storage.objectAdmin >/dev/null; then
+    --role roles/storage.objectAdmin --condition=None >/dev/null; then
   ok "functions can rename files in gs://$BUCKET"
 else
   xdrive_ok=""
@@ -91,7 +91,8 @@ else
 fi
 
 echo "== 5/7 Firebase sign-in, hosting site and web app"
-$FB projects:list >/dev/null 2>&1 || $FB login --no-localhost || fail "Firebase sign-in failed."
+# A saved Firebase sign-in can expire while still counting as "logged in", so reauth when it fails.
+$FB projects:list >/dev/null 2>&1 || $FB login --reauth --no-localhost || fail "Firebase sign-in failed."
 if $FB hosting:sites:get "$SITE" --project "$PROJECT" >/dev/null 2>&1; then
   ok "site $SITE exists"
 else
