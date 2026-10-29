@@ -62,31 +62,33 @@ ok "bucket is in project $bucket_project"
 TOPIC="xdrive-files"
 gcloud pubsub topics describe "$TOPIC" --project "$PROJECT" >/dev/null 2>&1 \
   || gcloud pubsub topics create "$TOPIC" --project "$PROJECT" >/dev/null || fail "creating Pub/Sub topic $TOPIC failed."
-gs_agent=$(gcloud storage service-agent --project "$bucket_project") || fail "cannot read the storage agent of $bucket_project."
-# Google creates the storage agent the first time it's asked for, and IAM can take a
-# minute or two to see a new one.
-granted=""
-for _ in $(seq 1 12); do
-  if gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project "$PROJECT" --member "serviceAccount:$gs_agent" \
-      --role roles/pubsub.publisher --quiet >/dev/null 2>&1; then granted=1; break; fi
-  echo "  waiting for $gs_agent to become visible..."
-  sleep 15
-done
-[ -n "$granted" ] || fail "letting the bucket publish to $TOPIC failed. Wait a few minutes and run this script again."
-ok "bucket may publish to $TOPIC"
+gs_agent=$(gcloud storage service-agent --project "$bucket_project" 2>/dev/null)
+# Make sure Google has actually created that project's storage agent before granting it anything.
+gcloud beta services identity create --service=storage.googleapis.com --project "$bucket_project" --quiet >/dev/null 2>&1
+xdrive_ok=1
+if [ -n "$gs_agent" ] && gcloud pubsub topics add-iam-policy-binding "$TOPIC" --project "$PROJECT" \
+    --member "serviceAccount:$gs_agent" --role roles/pubsub.publisher --quiet >/dev/null 2>&1; then
+  ok "bucket may publish to $TOPIC"
+fi
 if gcloud storage buckets notifications list "gs://$BUCKET" --format=json 2>/dev/null | grep -q "projects/$PROJECT/topics/$TOPIC"; then
   ok "bucket notification already set"
-else
-  gcloud storage buckets notifications create "gs://$BUCKET" --topic="projects/$PROJECT/topics/$TOPIC" \
-    --payload-format=json --event-types=OBJECT_FINALIZE,OBJECT_DELETE >/dev/null || fail "creating the bucket notification failed."
+elif gcloud storage buckets notifications create "gs://$BUCKET" --topic="projects/$PROJECT/topics/$TOPIC" \
+    --payload-format=json --event-types=OBJECT_FINALIZE,OBJECT_DELETE >/dev/null; then
   ok "bucket notification created"
+else
+  xdrive_ok=""
+  note "could not connect gs://$BUCKET to $TOPIC. Continuing so the dashboard still deploys; X: drive file IDs stay off until this works."
 fi
 # The function renames new files to add their ID, so its account needs write access to the bucket.
 number=$(gcloud projects describe "$PROJECT" --format='value(projectNumber)')
-gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
-  --member "serviceAccount:$number-compute@developer.gserviceaccount.com" \
-  --role roles/storage.objectAdmin >/dev/null || fail "giving the functions write access to gs://$BUCKET failed."
-ok "functions can rename files in gs://$BUCKET"
+if gcloud storage buckets add-iam-policy-binding "gs://$BUCKET" \
+    --member "serviceAccount:$number-compute@developer.gserviceaccount.com" \
+    --role roles/storage.objectAdmin >/dev/null; then
+  ok "functions can rename files in gs://$BUCKET"
+else
+  xdrive_ok=""
+  note "could not give the functions write access to gs://$BUCKET."
+fi
 
 echo "== 5/7 Firebase sign-in, hosting site and web app"
 $FB projects:list >/dev/null 2>&1 || $FB login --no-localhost || fail "Firebase sign-in failed."
@@ -114,6 +116,8 @@ gcloud auth application-default print-access-token >/dev/null 2>&1 || gcloud aut
 (cd functions && node backfill-files.js "$PROJECT") || note "listing failed; run 'cd functions && node backfill-files.js $PROJECT' later."
 note "the dashboard creates the engine list the first time you sign in, so if no files were listed, sign in first and run that again."
 note "to give those files IDs (this renames them), run: cd functions && node backfill-files.js $PROJECT --apply"
+
+[ -n "$xdrive_ok" ] || note "X: drive file IDs are not connected yet; paste the step 4 messages to Claude."
 
 cat <<EOF2
 
