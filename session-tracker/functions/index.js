@@ -23,7 +23,7 @@ exports.api = onRequest(
     }
     try {
       if (req.path === "/api/screenshot") {
-        res.status(200).json(await saveScreenshot(db, shotBucket(), String(req.query.id || ""), req.rawBody));
+        res.status(200).json(await saveScreenshot(db, shotBucket(), String(req.query.id || ""), req.rawBody, String(req.query.label || "")));
         return;
       }
       const body = parseBody(req);
@@ -138,6 +138,7 @@ async function handleSysinfo(body) {
 const { onMessagePublished } = require("firebase-functions/v2/pubsub");
 const { getStorage } = require("firebase-admin/storage");
 const { XDRIVE_BUCKET, XDRIVE_TOPIC, registerFile, renameToId, markDeleted, ensureMakeFolders } = require("./files");
+const { linkUpload, renameSessionUploads } = require("./uploads");
 
 exports.xdriveFileChanged = onMessagePublished(
   { topic: XDRIVE_TOPIC, region: "us-central1", memory: "256MiB" },
@@ -146,6 +147,7 @@ exports.xdriveFileChanged = onMessagePublished(
     const obj = event.data.message.json;
     if (!obj?.name) return;
     if (attrs.eventType === "OBJECT_FINALIZE") {
+      await linkUpload(db, getStorage().bucket(obj.bucket), obj);
       const reg = await registerFile(db, obj);
       if (reg?.renameTo) await renameToId(getStorage().bucket(obj.bucket), obj, reg.id, reg.renameTo);
     } else if (attrs.eventType === "OBJECT_DELETE" && !attrs.overwrittenByGeneration) {
@@ -166,5 +168,20 @@ exports.engineMakeFolders = onDocumentWritten(
     if (!make) return;
     const created = await ensureMakeFolders(getStorage().bucket(XDRIVE_BUCKET), make);
     if (created.length) logger.info("created X: drive folders", { make: make.name, created });
+  },
+);
+
+// Saving a job (or editing a saved one) names the files the customer added to Uploads
+// during it after the customer, engine model, ECM type and date.
+exports.jobUploadNames = onDocumentWritten(
+  { document: "sessions/{id}", region: "us-central1", memory: "256MiB" },
+  async (event) => {
+    const before = event.data?.before?.data() || {};
+    const after = event.data?.after?.data();
+    if (!["complete", "merged"].includes(after?.status)) return;
+    const keys = ["status", "customer_id", "engine_model", "ecm_type", "merged_into"];
+    if (keys.every((k) => before[k] === after[k])) return;
+    const renamed = await renameSessionUploads(db, getStorage().bucket(XDRIVE_BUCKET), event.params.id);
+    if (renamed.length) logger.info("named customer uploads", { session: event.params.id, renamed });
   },
 );

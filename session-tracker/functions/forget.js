@@ -3,6 +3,7 @@
 // leaving no record.
 const crypto = require("crypto");
 const { deleteScreenshots } = require("./screenshots");
+const { forgetUploads } = require("./uploads");
 
 // Jobs already saved can't be removed this way.
 const FORGETTABLE = ["connecting", "active", "needs_details", "not_authorized", "dismissed"];
@@ -31,6 +32,7 @@ async function forgetSessions(db, ids, shotBucket) {
     }
     await batch.commit();
     if (shotBucket) await deleteScreenshots(db, shotBucket, id);
+    await forgetUploads(db, id);
     removed++;
   }
   return removed;

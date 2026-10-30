@@ -816,6 +816,7 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("api_server_connection_tip", ""),
         ("api_server_empty_tip", ""),
         ("Job form", ""),
+        ("Screenshot label for the job", ""),
     ].iter().cloned().collect();
 }
 

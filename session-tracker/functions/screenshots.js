@@ -1,6 +1,7 @@
 // Screenshots a technician takes during a remote session (toolbar > Take screenshot)
-// are uploaded by ET Tuning Remote and kept with that session's job. The images live
-// in their own private bucket; the dashboard fetches them through the api function.
+// are uploaded by ET Tuning Remote, with the label typed in its screenshot window, and
+// kept with that session's job. The images live in their own private bucket; the
+// dashboard fetches them through the api function.
 const { Timestamp } = require("firebase-admin/firestore");
 const { BadRequest } = require("./events");
 
@@ -23,7 +24,7 @@ async function liveSession(db, rustdeskId) {
   return first || null;
 }
 
-async function saveScreenshot(db, bucket, rustdeskId, data) {
+async function saveScreenshot(db, bucket, rustdeskId, data, label = "") {
   if (!/^[\w-]{1,64}$/.test(rustdeskId || "")) throw new BadRequest("bad id");
   if (!data?.length || data.length > MAX_BYTES || !data.subarray(0, 8).equals(PNG)) throw new BadRequest("not a PNG");
   const session = await liveSession(db, rustdeskId);
@@ -33,7 +34,9 @@ async function saveScreenshot(db, bucket, rustdeskId, data) {
   const ref = db.collection("screenshots").doc();
   const path = `sessions/${session.id}/${ref.id}.png`;
   await bucket.file(path).save(data, { resumable: false, contentType: "image/png" });
-  await ref.set({ session_id: session.id, rustdesk_id: rustdeskId, path, size: data.length, taken_at: Timestamp.now() });
+  await ref.set({
+    session_id: session.id, rustdesk_id: rustdeskId, path, size: data.length, label: label.trim().slice(0, 200), taken_at: Timestamp.now(),
+  });
   return { id: ref.id, session_id: session.id };
 }
 

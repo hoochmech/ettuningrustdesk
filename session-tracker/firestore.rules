@@ -49,6 +49,11 @@ service cloud.firestore {
     }
     match /screenshots/{id} {
       allow read: if isStaff();
+      allow update: if isStaff() && onlyChanges(['label']) && request.resource.data.label is string
+        && request.resource.data.label.size() <= 200;
+    }
+    match /uploads/{id} {
+      allow read: if isStaff();
     }
   }
 }

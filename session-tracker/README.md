@@ -51,11 +51,21 @@ other waiting connections on the same computer that overlap it (within a minute)
 folded into it.
 
 Screenshots taken with "Take screenshot" in the client's remote toolbar are saved to the
-job automatically, whatever is picked in the save dialog. The technician's client posts
-the PNG to `/api/screenshot` with the remote ID; the function stores it in the private
-`rustdesk-api-482222-job-screenshots` bucket under the session in progress on that
-computer, and the job form shows them under "Screenshots" (fetched through
-`/api/screenshot-file`, which checks the staff list). "Don't log" deletes them too.
+job automatically, whatever is picked in the screenshot window, with the label the
+technician types there. The client posts the PNG to `/api/screenshot` with the remote ID
+and label; the function stores it in the private `rustdesk-api-482222-job-screenshots`
+bucket under the session in progress on that computer. The job form shows them under
+"Screenshots" in the order taken, with their labels, which can be edited there (images
+are fetched through `/api/screenshot-file`, which checks the staff list). "Don't log"
+deletes them too.
+
+Files the customer adds to `X:\Uploads` during a session are linked to that session
+(`uploads` collection) and listed on its job form. When the job is saved, or a saved job
+is edited, the `jobUploadNames` function renames them with the customer, engine model,
+ECM type and session date (Texas time) in front of the name the customer gave them:
+`Uploads/log.bin` → `Uploads/Smith Trucking_ISX15_CM871_2026-10-30_log.bin`. It never
+overwrites a file; a name already taken gets ` (2)`. "Don't log" removes the link but
+leaves the file.
 
 Hosting answers every other API path the client tries (heartbeat, address book,
 login) with an empty 404, which the client ignores, so idle heartbeats cost nothing.
@@ -85,7 +95,8 @@ folders for makes that were on the Lists tab before the function was deployed.
 | `lists/vehicle_makes` | vehicle makes |
 | `files` | one per file ID: path, make, size, upload time, whether it's still current |
 | `conn_events` | every raw report from clients (audit log) |
-| `screenshots` | one per screenshot: session, remote ID, bucket path, size, time taken |
+| `screenshots` | one per screenshot: session, remote ID, label, bucket path, size, time taken |
+| `uploads` | one per file a customer added to `Uploads/`: session, original name, current path |
 | `staff` | document ID = Google account email allowed to sign in |
 
 ## Setup
@@ -124,6 +135,10 @@ To redeploy after a change, run `setup.sh` again.
   PNG of up to 20 MB for a computer with a session in progress, and at most 100 per
   session. A screenshot taken when the customer's PC is on a client older than 1.5.3 (no
   session is recorded) is not saved.
+- The customer's X: drive writes with a shared account, so an upload doesn't say which
+  computer it came from. It is linked to the one computer with a remote desktop session
+  open (or closed in the last two minutes); if two computers are connected at once, it
+  isn't linked and keeps its name.
 
 ## Tests
 

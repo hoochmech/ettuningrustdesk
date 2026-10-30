@@ -493,6 +493,11 @@ class FfiModel with ChangeNotifier {
       msgBox(sessionId, msgBoxType, msgBoxTitle, msg, '', dialogManager);
     } else {
       final msgBoxText = 'screenshot-action-tip';
+      final label = TextEditingController();
+
+      // Every screenshot goes to the job, whichever button is pressed.
+      saveToJob() => bind.sessionSaveScreenshotToJob(
+          sessionId: sessionId, label: label.text);
 
       close() {
         dialogManager.dismissAll();
@@ -501,6 +506,7 @@ class FfiModel with ChangeNotifier {
       saveAs() {
         close();
         Future.delayed(Duration.zero, () async {
+          await saveToJob();
           final ts = DateTime.now().millisecondsSinceEpoch ~/ 1000;
           String? outputFile = await FilePicker.platform.saveFile(
             dialogTitle: '${translate('Save as')}...',
@@ -521,12 +527,14 @@ class FfiModel with ChangeNotifier {
         });
       }
 
-      copyToClipboard() {
+      copyToClipboard() async {
+        await saveToJob();
         bind.sessionHandleScreenshot(sessionId: sessionId, action: '1');
         close();
       }
 
-      cancel() {
+      cancel() async {
+        await saveToJob();
         bind.sessionHandleScreenshot(sessionId: sessionId, action: '2');
         close();
       }
@@ -540,8 +548,21 @@ class FfiModel with ChangeNotifier {
       dialogManager.show(
         (setState, close, context) => CustomAlertDialog(
           title: null,
-          content: SelectionArea(
-              child: msgboxContent(msgBoxType, msgBoxTitle, msgBoxText)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectionArea(
+                  child: msgboxContent(msgBoxType, msgBoxTitle, msgBoxText)),
+              TextField(
+                controller: label,
+                autofocus: true,
+                maxLength: 200,
+                decoration: InputDecoration(
+                    labelText: translate('Screenshot label for the job')),
+              ),
+            ],
+          ),
           actions: buttons,
         ),
         tag: '$msgBoxType-$msgBoxTitle-$msgBoxTitle',
