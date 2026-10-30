@@ -50,6 +50,13 @@ A file transfer or terminal window is a separate connection. When a job is saved
 other waiting connections on the same computer that overlap it (within a minute) are
 folded into it.
 
+Screenshots taken with "Take screenshot" in the client's remote toolbar are saved to the
+job automatically, whatever is picked in the save dialog. The technician's client posts
+the PNG to `/api/screenshot` with the remote ID; the function stores it in the private
+`rustdesk-api-482222-job-screenshots` bucket under the session in progress on that
+computer, and the job form shows them under "Screenshots" (fetched through
+`/api/screenshot-file`, which checks the staff list). "Don't log" deletes them too.
+
 Hosting answers every other API path the client tries (heartbeat, address book,
 login) with an empty 404, which the client ignores, so idle heartbeats cost nothing.
 
@@ -78,6 +85,7 @@ folders for makes that were on the Lists tab before the function was deployed.
 | `lists/vehicle_makes` | vehicle makes |
 | `files` | one per file ID: path, make, size, upload time, whether it's still current |
 | `conn_events` | every raw report from clients (audit log) |
+| `screenshots` | one per screenshot: session, remote ID, bucket path, size, time taken |
 | `staff` | document ID = Google account email allowed to sign in |
 
 ## Setup
@@ -112,6 +120,10 @@ To redeploy after a change, run `setup.sh` again.
 - Renaming a file on the X: drive gives it a new ID; the old ID stays on jobs that
   used it. Overwriting a file in place keeps its ID.
 - The Sessions tab loads the latest 1000 sessions.
+- Like the session reports, `/api/screenshot` can't check who is posting. It only takes a
+  PNG of up to 20 MB for a computer with a session in progress, and at most 100 per
+  session. A screenshot taken when the customer's PC is on a client older than 1.5.3 (no
+  session is recorded) is not saved.
 
 ## Tests
 

@@ -1,11 +1,13 @@
 // "Don't log this session": removes the session and everything recorded about its
-// connection (the raw events and the open-connection pointer), leaving no record.
+// connection (the raw events, the open-connection pointer and its screenshots),
+// leaving no record.
 const crypto = require("crypto");
+const { deleteScreenshots } = require("./screenshots");
 
 // Jobs already saved can't be removed this way.
 const FORGETTABLE = ["connecting", "active", "needs_details", "not_authorized", "dismissed"];
 
-async function forgetSessions(db, ids) {
+async function forgetSessions(db, ids, shotBucket) {
   let removed = 0;
   for (const id of ids) {
     const ref = db.doc(`sessions/${id}`);
@@ -28,6 +30,7 @@ async function forgetSessions(db, ids) {
       if (at >= from && at <= to) batch.delete(e.ref);
     }
     await batch.commit();
+    if (shotBucket) await deleteScreenshots(db, shotBucket, id);
     removed++;
   }
   return removed;

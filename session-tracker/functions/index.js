@@ -1,5 +1,5 @@
 // Receives the session reports ET Tuning Remote clients send to their API server.
-// Firebase Hosting rewrites /api/audit/conn and /api/sysinfo here; every other
+// Firebase Hosting rewrites /api/audit/conn, /api/sysinfo and /api/screenshot here; every other
 // /api path the client tries (heartbeat, address book, login) gets Hosting's 404,
 // which the client handles, so idle heartbeats never start this function.
 const { onRequest } = require("firebase-functions/v2/https");
@@ -9,6 +9,7 @@ const { getFirestore, FieldValue, Timestamp } = require("firebase-admin/firestor
 const { BadRequest, parseConnEvent, applyConnEvent, parseSysinfo } = require("./events");
 const { getAuth } = require("firebase-admin/auth");
 const { forgetSessions } = require("./forget");
+const { screenshotBucket, saveScreenshot, readScreenshot } = require("./screenshots");
 
 initializeApp();
 const db = getFirestore();
@@ -21,12 +22,19 @@ exports.api = onRequest(
       return;
     }
     try {
+      if (req.path === "/api/screenshot") {
+        res.status(200).json(await saveScreenshot(db, shotBucket(), String(req.query.id || ""), req.rawBody));
+        return;
+      }
       const body = parseBody(req);
       if (req.path === "/api/audit/conn") {
         await handleConn(body);
         res.status(200).send("");
       } else if (req.path === "/api/forget") {
         res.status(200).json({ removed: await handleForget(req, body) });
+      } else if (req.path === "/api/screenshot-file") {
+        await requireStaff(req);
+        res.status(200).type("image/png").send(await readScreenshot(db, shotBucket(), body.id));
       } else if (req.path === "/api/sysinfo") {
         await handleSysinfo(body);
         // Tells the client to stop re-sending until its sysinfo changes.
@@ -96,6 +104,12 @@ async function handleConn(body) {
 
 // Called by the dashboard with the signed-in staff member's ID token.
 async function handleForget(req, body) {
+  await requireStaff(req);
+  const ids = Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : [];
+  return forgetSessions(db, ids, shotBucket());
+}
+
+async function requireStaff(req) {
   const token = (req.get("authorization") || "").replace(/^Bearer /, "");
   let user;
   try {
@@ -104,8 +118,10 @@ async function handleForget(req, body) {
     throw new BadRequest("not signed in");
   }
   if (!user.email_verified || !(await db.doc(`staff/${user.email}`).get()).exists) throw new BadRequest("not staff");
-  const ids = Array.isArray(body.ids) ? body.ids.filter((x) => typeof x === "string" && /^[\w-]{1,64}$/.test(x)).slice(0, 20) : [];
-  return forgetSessions(db, ids);
+}
+
+function shotBucket() {
+  return getStorage().bucket(screenshotBucket(process.env.GCLOUD_PROJECT));
 }
 
 async function handleSysinfo(body) {

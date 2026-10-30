@@ -2389,6 +2389,7 @@ impl<T: InvokeUiSession> Remote<T> {
                     self.handler.set_platform_additions(&pi.platform_additions);
                 }
                 Some(message::Union::ScreenshotResponse(response)) => {
+                    crate::client::screenshot::save_to_job(self.handler.get_id(), &response.data);
                     crate::client::screenshot::set_screenshot(response.data);
                     self.handler
                         .handle_screenshot_resp(response.sid, response.msg);

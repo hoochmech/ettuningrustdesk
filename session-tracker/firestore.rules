@@ -47,5 +47,8 @@ service cloud.firestore {
     match /conn_events/{id} {
       allow read: if isStaff();
     }
+    match /screenshots/{id} {
+      allow read: if isStaff();
+    }
   }
 }

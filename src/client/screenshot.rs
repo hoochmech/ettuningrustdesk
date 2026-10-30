@@ -102,6 +102,33 @@ pub fn handle_screenshot(action: String) -> String {
     SCREENSHOT.lock().unwrap().handle_screenshot(action)
 }
 
+/// Uploads a screenshot to the ET Tuning dashboard, which keeps it with the job for the
+/// session in progress on that computer.
+pub fn save_to_job(peer_id: String, data: &bytes::Bytes) {
+    let api = crate::ui_interface::get_api_server();
+    if api.is_empty() || data.is_empty() {
+        return;
+    }
+    let data = data.clone();
+    std::thread::spawn(move || {
+        let id = peer_id.split('@').next().unwrap_or_default();
+        let url = format!("{api}/api/screenshot");
+        let res = crate::hbbs_http::create_http_client_with_url(&url)
+            .post(&url)
+            .query(&[("id", id)])
+            .header("Content-Type", "image/png")
+            .body(data.to_vec())
+            .send();
+        match res {
+            Ok(resp) if resp.status().is_success() => {}
+            Ok(resp) => {
+                hbb_common::log::warn!("screenshot not saved to the job: {}", resp.status())
+            }
+            Err(e) => hbb_common::log::warn!("screenshot not saved to the job: {e}"),
+        }
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use super::Screenshot;

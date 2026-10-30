@@ -350,6 +350,7 @@ async function openSessionForm(id) {
       </label>
       <div class="chips" id="filechips"></div>
       <label style="margin-top:12px">Notes<textarea name="notes">${esc(s.notes)}</textarea></label>
+      <div id="shots-wrap" hidden><label style="margin-top:12px">Screenshots</label><div class="shots" id="shots"></div></div>
       <p class="err" id="sf-err"></p>
       <div class="row"><span class="spacer"></span>
         ${["needs_details", "active"].includes(s.status) ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
@@ -360,6 +361,7 @@ async function openSessionForm(id) {
 
   const f = $("#sf");
   const custSel = f.customer;
+  loadScreenshots(s);
 
   // Warranty: the job being warrantied, from this customer's earlier jobs, or a bypass
   // for work done before sessions were tracked here.
@@ -569,6 +571,28 @@ async function openSessionForm(id) {
       $("#sf-save").disabled = false;
     }
   };
+}
+
+// Screenshots taken during the session (or a connection folded into it), oldest first.
+// The images are private, so each one is fetched with the staff member's sign-in.
+async function loadScreenshots(s) {
+  const ids = [s.id, ...S.sessions.filter((o) => o.merged_into === s.id).map((o) => o.id)].slice(0, 30);
+  const snap = await db.collection("screenshots").where("session_id", "in", ids).get();
+  if (snap.empty || !$("#shots-wrap")) return;
+  $("#shots-wrap").hidden = false;
+  const token = await S.user.getIdToken();
+  const docs = snap.docs.sort((a, b) => (a.get("taken_at")?.toMillis() ?? 0) - (b.get("taken_at")?.toMillis() ?? 0));
+  for (const d of docs) {
+    const res = await fetch("/api/screenshot-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id: d.id }),
+    });
+    if (!res.ok) continue;
+    const url = URL.createObjectURL(await res.blob());
+    $("#shots")?.insertAdjacentHTML("beforeend",
+      `<a href="${url}" target="_blank" title="${esc(fmtDate(d.get("taken_at")))}"><img src="${url}" alt="Screenshot"></a>`);
+  }
 }
 
 function keepList(list, v) {
