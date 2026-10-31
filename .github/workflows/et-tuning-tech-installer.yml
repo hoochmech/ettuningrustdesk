@@ -1,0 +1,44 @@
+name: ET Tuning technician installer check
+
+# Builds the technician installer (res/et-tuning/tech-installer/build.ps1) with a dummy
+# key and checks that Windows PowerShell can parse the script inside it. The real
+# installer is built on your own computer, so the key never reaches GitHub.
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/et-tuning-tech-installer.yml"
+      - "res/et-tuning/tech-installer/**"
+      - "res/et-tuning/xdrive-tech-setup.ps1"
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: windows-2022
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build with a dummy key and parse the result
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          '{"type":"service_account","client_email":"dummy@example.com","private_key":"dummy"}' | Set-Content "$env:RUNNER_TEMP\key.json" -Encoding ascii
+          & res\et-tuning\tech-installer\build.ps1 -KeyFile "$env:RUNNER_TEMP\key.json"
+          $cmd = Get-Content "$env:RUNNER_TEMP\ETTuning-Technician-Setup.cmd" -Raw
+          $script = ($cmd -split '#ET-TECH-SCRIPT#')[2]
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseInput($script, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; throw "The embedded script does not parse." }
+          $CmdPath = "x"; $User = "x"
+          Invoke-Expression ($script -split 'if \(-not \$User\)')[0]
+          if ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($KeyBase64)) -notmatch "dummy@example.com") { throw "Key is not embedded." }
+          if ($TechSetup -notmatch "ET Tuning X drive") { throw "X: drive setup script is not embedded." }
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseInput($TechSetup, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { throw "The embedded X: drive setup script does not parse." }
+          Write-Host "OK"

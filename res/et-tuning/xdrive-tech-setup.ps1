@@ -12,7 +12,8 @@
 
 param(
     [string]$KeyFile = "C:\ProgramData\ETTuning\xdrive-tech-key.json",
-    [string]$Bucket = "ettuning-fileshare-files"
+    [string]$Bucket = "ettuning-fileshare-files",
+    [string]$User = "$env:USERDOMAIN\$env:USERNAME"
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -22,7 +23,6 @@ $RcloneVersion = "v1.69.1"
 $WinFspUrl = "https://github.com/winfsp/winfsp/releases/download/v2.0/winfsp-2.0.23075.msi"
 
 $dir = "C:\ProgramData\ETTuning\xdrive"
-$user = "$env:USERDOMAIN\$env:USERNAME"
 
 if (-not (Test-Path $KeyFile)) { throw "Put the technician key at $KeyFile first." }
 New-Item -ItemType Directory -Force -Path $dir | Out-Null

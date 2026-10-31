@@ -48,6 +48,14 @@ or delete anything. The drive unmounts when the session ends. The code is `src/x
   customer a 15 minute token, renewed every 10 minutes. Without it, no X: drive is offered.
 - `res/et-tuning/xdrive-tech-setup.ps1` gives the technician PC its own permanent,
   read-write X: drive.
+- Technician installer: on your own computer, run
+  `powershell -ExecutionPolicy Bypass -File res\et-tuning\tech-installer\build.ps1 -KeyFile <key.json>`.
+  It writes `ETTuning-Technician-Setup.cmd` next to the key, with the key inside. Run that
+  file on the technician PC, signed in as the technician: it installs the client from the
+  latest release if needed, puts the key in place and runs `xdrive-tech-setup.ps1`. The
+  file is as secret as the key: keep it off customer PCs, out of this (public) repository
+  and out of GitHub Actions. To change keys, create a new one in Google Cloud, rebuild,
+  run it on each technician PC, then delete the old key.
 - The installer carries `xdrive\rclone.exe` and `xdrive\winfsp.msi`. WinFsp is installed
   on the customer's PC the first time a drive is mounted, which needs the client to be
   installed (not run portable).
