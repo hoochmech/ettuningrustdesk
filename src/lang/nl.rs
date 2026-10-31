@@ -816,5 +816,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("api_server_connection_tip", "De door jou gebruikte aangepaste server maakt gebruik van onversleuteld HTTP. Neem contact op met de beheerder om HTTPS in te schakelen."),
         ("api_server_empty_tip", "Als de API-server leeg is, wordt de aangepaste server standaard ingesteld op HTTP. Neem contact op met de beheerder om HTTPS in te schakelen."),
         ("Job form", ""),
+        ("Screenshot label for the job", ""),
     ].iter().cloned().collect();
 }

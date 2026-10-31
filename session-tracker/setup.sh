@@ -100,6 +100,20 @@ else
   note "could not give the functions write access to gs://$BUCKET."
 fi
 
+# Screenshots taken during sessions are kept with the job in a private bucket here.
+SHOTS="$PROJECT-job-screenshots"
+if gcloud storage buckets describe "gs://$SHOTS" >/dev/null 2>&1; then
+  ok "screenshot bucket exists"
+else
+  gcloud storage buckets create "gs://$SHOTS" --project "$PROJECT" --location "$REGION" \
+    --uniform-bucket-level-access --public-access-prevention >/dev/null || fail "creating gs://$SHOTS failed."
+  ok "screenshot bucket created"
+fi
+gcloud storage buckets add-iam-policy-binding "gs://$SHOTS" \
+  --member "serviceAccount:$number-compute@developer.gserviceaccount.com" \
+  --role roles/storage.objectAdmin --condition=None >/dev/null || fail "giving the functions access to gs://$SHOTS failed."
+ok "functions can store screenshots"
+
 echo "== 5/7 Firebase sign-in, hosting site and web app"
 # A saved Firebase sign-in can expire while still counting as "logged in", so reauth when it fails.
 $FB projects:list >/dev/null 2>&1 || $FB login --reauth --no-localhost || fail "Firebase sign-in failed."

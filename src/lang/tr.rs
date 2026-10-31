@@ -816,5 +816,6 @@ pub static ref T: std::collections::HashMap<&'static str, &'static str> =
         ("api_server_connection_tip", "Özel sunucunuz şifrelenmemiş HTTP kullanıyor. HTTPS'yi etkinleştirmesi için yöneticinize başvurun."),
         ("api_server_empty_tip", "API sunucusu alanı boş bırakıldığında özel sunucunuz varsayılan olarak HTTP kullanır. HTTPS'yi etkinleştirmesi için yöneticinize başvurun."),
         ("Job form", ""),
+        ("Screenshot label for the job", ""),
     ].iter().cloned().collect();
 }

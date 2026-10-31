@@ -43,6 +43,11 @@ tr.click { cursor: pointer; } tr.click:hover td { background: var(--panel2); }
 .pill.ok { border-color: var(--ok); color: var(--ok); } .pill.warn { border-color: var(--warn); color: var(--warn); }
 .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; }
 .chip { background: var(--panel2); border: 1px solid var(--gold); border-radius: 14px; padding: 2px 4px 2px 10px; font-size: 13px; display: inline-flex; gap: 6px; align-items: center; }
+.shots { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 6px; }
+.shots img { height: 90px; border: 1px solid var(--line); border-radius: 6px; display: block; }
+.shot { margin: 0; width: 160px; }
+.shot img { width: 160px; height: 90px; object-fit: cover; }
+.shot input { margin-top: 4px; width: 100%; font-size: 13px; padding: 4px 6px; }
 .chip button { background: none; border: 0; color: var(--muted); cursor: pointer; font-size: 15px; }
 .picker { position: relative; }
 .picker-list { position: absolute; left: 0; right: 0; top: 100%; background: var(--panel2); border: 1px solid var(--line); border-radius: 6px; z-index: 3; max-height: 240px; overflow-y: auto; }

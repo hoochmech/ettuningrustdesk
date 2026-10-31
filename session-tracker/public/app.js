@@ -350,6 +350,8 @@ async function openSessionForm(id) {
       </label>
       <div class="chips" id="filechips"></div>
       <label style="margin-top:12px">Notes<textarea name="notes">${esc(s.notes)}</textarea></label>
+      <div id="ups-wrap" hidden><label style="margin-top:12px">Customer uploads (X:\\Uploads)</label><div class="chips" id="ups"></div></div>
+      <div id="shots-wrap" hidden><label style="margin-top:12px">Screenshots</label><div class="shots" id="shots"></div></div>
       <p class="err" id="sf-err"></p>
       <div class="row"><span class="spacer"></span>
         ${["needs_details", "active"].includes(s.status) ? `<button type="button" class="btn ghost" id="sf-skip">Don't log this session</button>` : ""}
@@ -360,6 +362,8 @@ async function openSessionForm(id) {
 
   const f = $("#sf");
   const custSel = f.customer;
+  loadScreenshots(s);
+  loadUploads(s);
 
   // Warranty: the job being warrantied, from this customer's earlier jobs, or a bypass
   // for work done before sessions were tracked here.
@@ -569,6 +573,48 @@ async function openSessionForm(id) {
       $("#sf-save").disabled = false;
     }
   };
+}
+
+function jobSessionIds(s) {
+  return [s.id, ...S.sessions.filter((o) => o.merged_into === s.id).map((o) => o.id)].slice(0, 30);
+}
+
+// Files the customer added to X:\Uploads during the session. Saving the job renames them
+// with its customer, engine model, ECM type and date.
+async function loadUploads(s) {
+  const snap = await db.collection("uploads").where("session_id", "in", jobSessionIds(s)).get();
+  if (snap.empty || !$("#ups-wrap")) return;
+  $("#ups-wrap").hidden = false;
+  $("#ups").innerHTML = snap.docs
+    .sort((a, b) => (a.get("uploaded_at")?.toMillis() ?? 0) - (b.get("uploaded_at")?.toMillis() ?? 0))
+    .map((d) => `<span class="chip" title="Uploaded as ${esc(d.get("original_name"))}">${esc(d.get("path").split("/").pop())}</span>`).join("");
+}
+
+// Screenshots taken during the session (or a connection folded into it), oldest first,
+// each with a label saved as it's typed. The images are private, so each one is
+// fetched with the staff member's sign-in.
+async function loadScreenshots(s) {
+  const ids = jobSessionIds(s);
+  const snap = await db.collection("screenshots").where("session_id", "in", ids).get();
+  if (snap.empty || !$("#shots-wrap")) return;
+  $("#shots-wrap").hidden = false;
+  const token = await S.user.getIdToken();
+  const docs = snap.docs.sort((a, b) => (a.get("taken_at")?.toMillis() ?? 0) - (b.get("taken_at")?.toMillis() ?? 0));
+  for (const d of docs) {
+    const res = await fetch("/api/screenshot-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ id: d.id }),
+    });
+    if (!res.ok) continue;
+    const url = URL.createObjectURL(await res.blob());
+    $("#shots")?.insertAdjacentHTML("beforeend", `<figure class="shot">
+      <a href="${url}" target="_blank" title="${esc(fmtDate(d.get("taken_at")))}"><img src="${url}" alt="${esc(d.get("label") || "Screenshot")}"></a>
+      <input data-shot="${d.id}" value="${esc(d.get("label") || "")}" placeholder="Label" maxlength="200">
+    </figure>`);
+    const input = $(`[data-shot="${d.id}"]`);
+    if (input) input.onchange = () => db.doc(`screenshots/${d.id}`).update({ label: input.value.trim() });
+  }
 }
 
 function keepList(list, v) {

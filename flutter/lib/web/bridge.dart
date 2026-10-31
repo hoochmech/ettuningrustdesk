@@ -1963,6 +1963,11 @@ class RustdeskImpl {
     throw UnimplementedError("sessionGetCommonSync");
   }
 
+  Future<void> sessionSaveScreenshotToJob(
+      {required UuidValue sessionId, required String label, dynamic hint}) {
+    return Future.value();
+  }
+
   Future<void> sessionTakeScreenshot(
       {required UuidValue sessionId, required int display, dynamic hint}) {
     throw UnimplementedError("sessionTakeScreenshot");

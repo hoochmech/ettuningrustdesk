@@ -329,6 +329,13 @@ pub fn session_handle_screenshot(
     crate::client::screenshot::handle_screenshot(action)
 }
 
+pub fn session_save_screenshot_to_job(session_id: SessionID, label: String) {
+    if let Some(s) = sessions::get_session_by_session_id(&session_id) {
+        let id = s.lc.read().unwrap().get_id().to_owned();
+        crate::client::screenshot::save_to_job(id, label);
+    }
+}
+
 pub fn session_is_multi_ui_session(session_id: SessionID) -> SyncReturn<bool> {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         SyncReturn(session.is_multi_ui_session())
