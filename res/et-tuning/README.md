@@ -48,6 +48,13 @@ or delete anything. The drive unmounts when the session ends. The code is `src/x
   customer a 15 minute token, renewed every 10 minutes. Without it, no X: drive is offered.
 - `res/et-tuning/xdrive-tech-setup.ps1` gives the technician PC its own permanent,
   read-write X: drive.
+- Technician installer: Actions > "ET Tuning technician installer" > Run workflow builds
+  `ETTuningRemote-Technician-<version>.exe` from the latest release's MSI and the
+  `XDRIVE_TECH_KEY_JSON` secret. Run it on the technician PC, signed in as the
+  technician: it installs the client if needed, puts the key in place and runs
+  `xdrive-tech-setup.ps1`. The exe contains the key, so keep it off customer PCs and
+  public places; the artifact is deleted after a day. Customers keep using the normal
+  installer from the release, and the technician's client updates from it too.
 - The installer carries `xdrive\rclone.exe` and `xdrive\winfsp.msi`. WinFsp is installed
   on the customer's PC the first time a drive is mounted, which needs the client to be
   installed (not run portable).
@@ -61,6 +68,9 @@ or delete anything. The drive unmounts when the session ends. The code is `src/x
   Create the pair with `python res/et-tuning/new_update_key.py` on your own computer,
   store the secret here, and put the public key bytes in `src/update_metadata.rs`.
   If the secret is lost, make a new pair and ship that build by hand to every machine.
+- `XDRIVE_TECH_KEY_JSON` (for the technician installer): the full contents of the
+  `xdrive-tech` service account's JSON key file. To change keys, create a new key, replace
+  the secret, rebuild, reinstall on each technician PC, then delete the old key.
 - `WINDOWS_CERT_PFX_BASE64`, `WINDOWS_CERT_PASSWORD` (optional): Authenticode
   certificate, base64-encoded .pfx. Unsigned builds work but show a SmartScreen warning.
 
