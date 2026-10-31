@@ -2106,6 +2106,32 @@ pub fn session_get_last_audit_note(session_id: SessionID) -> SyncReturn<String> 
     }
 }
 
+pub fn session_et_usb_request(session_id: SessionID, action: String, bus_id: String) {
+    #[cfg(windows)]
+    if let Some(session) = sessions::get_session_by_session_id(&session_id) {
+        crate::usbip::send_request(&*session, &action, bus_id);
+    }
+    #[cfg(not(windows))]
+    let _ = (session_id, action, bus_id);
+}
+
+pub fn main_et_usb_attach(peer_id: String, bus_id: String) {
+    #[cfg(windows)]
+    crate::usbip::attach(peer_id, bus_id);
+    #[cfg(not(windows))]
+    let _ = (peer_id, bus_id);
+}
+
+pub fn main_et_usb_state(peer_id: String) -> SyncReturn<String> {
+    #[cfg(windows)]
+    return SyncReturn(crate::usbip::state_json(&peer_id));
+    #[cfg(not(windows))]
+    {
+        let _ = peer_id;
+        SyncReturn("{}".to_owned())
+    }
+}
+
 pub fn session_set_audit_guid(session_id: SessionID, guid: String) {
     if let Some(session) = sessions::get_session_by_session_id(&session_id) {
         *session.audit_guid.lock().unwrap() = guid;

@@ -1984,6 +1984,7 @@ impl Connection {
                 json!(privacy_mode::get_supported_privacy_mode_impl()),
             );
             crate::xdrive::add_platform_additions(&mut platform_additions);
+            crate::usbip::add_platform_additions(&mut platform_additions);
         }
         #[cfg(target_os = "macos")]
         {
@@ -4071,6 +4072,21 @@ impl Connection {
                     Some(misc::Union::EtDriveToken(t)) => {
                         if self.is_remote() && self.peer_keyboard_enabled() {
                             crate::xdrive::on_token(self.inner.id(), t);
+                        }
+                    }
+                    #[cfg(windows)]
+                    Some(misc::Union::EtUsbRequest(r)) => {
+                        if self.is_remote()
+                            && self.peer_keyboard_enabled()
+                            && Self::permission(
+                                keys::OPTION_ENABLE_TUNNEL,
+                                &self.control_permissions,
+                            )
+                        {
+                            let mut inner = self.inner.clone();
+                            crate::usbip::on_request(self.inner.id(), r, move |msg| {
+                                inner.send(Arc::new(msg))
+                            });
                         }
                     }
                     _ => {}
@@ -6729,6 +6745,8 @@ impl Drop for Connection {
     fn drop(&mut self) {
         #[cfg(windows)]
         crate::xdrive::on_conn_closed(self.inner.id());
+        #[cfg(windows)]
+        crate::usbip::on_conn_closed(self.inner.id());
         #[cfg(not(any(target_os = "android", target_os = "ios")))]
         self.release_pressed_modifiers();
 

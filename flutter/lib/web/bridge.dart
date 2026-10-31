@@ -2055,6 +2055,23 @@ class RustdeskImpl {
     return js.context.callMethod('getByName', ['last_audit_note']);
   }
 
+  Future<void> sessionEtUsbRequest(
+      {required UuidValue sessionId,
+      required String action,
+      required String busId,
+      dynamic hint}) {
+    return Future.value();
+  }
+
+  Future<void> mainEtUsbAttach(
+      {required String peerId, required String busId, dynamic hint}) {
+    return Future.value();
+  }
+
+  String mainEtUsbState({required String peerId, dynamic hint}) {
+    return '{}';
+  }
+
   Future<void> sessionSetAuditGuid(
       {required UuidValue sessionId, required String guid, dynamic hint}) {
     return Future(

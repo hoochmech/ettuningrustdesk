@@ -182,6 +182,23 @@ jobs:
             throw "WinFsp MSI signature: $($sig.Status) $($sig.SignerCertificate.Subject)"
           }
 
+      # USB over IP (src/usbip.rs): usbipd-win shares a device on the customer's PC,
+      # usbip-win2 attaches it on the technician's. Both are installed on first use.
+      - name: Bundle USB/IP installers
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path ./rustdesk/usbip | Out-Null
+          $files = @(
+            @{ Url = "https://github.com/dorssel/usbipd-win/releases/download/v5.3.0/usbipd-win_5.3.0_x64.msi"; Out = "usbipd-win.msi"; Sha = "1c984914aec944de19b64eff232421439629699f8138e3ddc29301175bc6d938" },
+            @{ Url = "https://github.com/vadimgrn/usbip-win2/releases/download/v.0.9.8.0/USBip-0.9.8.0-x64.exe"; Out = "usbip-win2-setup.exe"; Sha = "81f426741f7ee2ed991febe24a22daca8400b6ae2f171054e3fb404897e15d39" }
+          )
+          foreach ($f in $files) {
+            $path = "./rustdesk/usbip/$($f.Out)"
+            Invoke-WebRequest -Uri $f.Url -OutFile $path
+            $actual = (Get-FileHash $path -Algorithm SHA256).Hash.ToLower()
+            if ($actual -ne $f.Sha) { throw "$($f.Out) checksum mismatch: $actual" }
+          }
+
       - name: Run the Rust tests
         shell: bash
         run: |
