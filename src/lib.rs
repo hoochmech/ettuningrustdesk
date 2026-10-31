@@ -25,6 +25,8 @@ pub mod branding;
 pub mod common;
 #[cfg(windows)]
 mod xdrive;
+#[cfg(windows)]
+mod usbip;
 #[cfg(not(any(target_os = "ios")))]
 pub mod ipc;
 #[cfg(not(any(
