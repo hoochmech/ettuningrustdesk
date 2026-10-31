@@ -2293,6 +2293,10 @@ impl<T: InvokeUiSession> Remote<T> {
                     Some(misc::Union::FollowCurrentDisplay(d_idx)) => {
                         self.handler.set_current_display(d_idx);
                     }
+                    #[cfg(windows)]
+                    Some(misc::Union::EtUsbDevices(d)) => {
+                        crate::usbip::on_devices(&self.handler.get_id(), d);
+                    }
                     _ => {}
                 },
                 Some(message::Union::TestDelay(t)) => {

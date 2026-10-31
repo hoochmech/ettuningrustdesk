@@ -869,6 +869,10 @@ message Misc {
     uint64 request_cursor_data = 39;
     // ET Tuning: mounts the X: drive on the controlled side for this session.
     EtDriveToken et_drive_token = 1001;
+    // ET Tuning: USB over IP. The controlling side asks, the controlled side answers
+    // with its device list.
+    EtUsbRequest et_usb_request = 1002;
+    EtUsbDevices et_usb_devices = 1003;
   }
 }
 
@@ -877,6 +881,28 @@ message Misc {
 message EtDriveToken {
   string access_token = 1;
   int64 expires_at = 2; // Unix seconds.
+}
+
+message EtUsbRequest {
+  enum Action {
+    List = 0;
+    Share = 1;
+    Unshare = 2;
+  }
+  Action action = 1;
+  string bus_id = 2;
+}
+
+message EtUsbDevice {
+  string bus_id = 1;
+  string description = 2;
+  bool shared = 3;
+  bool attached = 4;
+}
+
+message EtUsbDevices {
+  repeated EtUsbDevice devices = 1;
+  string error = 2;
 }
 
 message VoiceCallRequest {

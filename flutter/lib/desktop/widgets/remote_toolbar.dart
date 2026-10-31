@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hbb/common/widgets/audio_input.dart';
 import 'package:flutter_hbb/common/widgets/dialog.dart';
 import 'package:flutter_hbb/common/job_form.dart';
+import 'package:flutter_hbb/desktop/widgets/usb_devices_dialog.dart';
 import 'package:flutter_hbb/common/widgets/keyboard_shortcuts/display.dart';
 import 'package:flutter_hbb/common/widgets/toolbar.dart';
 import 'package:flutter_hbb/models/chat_model.dart';
@@ -852,6 +853,9 @@ class _RemoteToolbarState extends State<RemoteToolbar> {
       toolbarItems.add(_VoiceCallMenu(id: widget.id, ffi: widget.ffi));
     }
     if (!isWeb) toolbarItems.add(_RecordMenu());
+    if (isWindows && widget.ffi.connType == ConnType.defaultConn) {
+      toolbarItems.add(_UsbMenu(id: widget.id, ffi: widget.ffi));
+    }
     toolbarItems.add(_JobFormMenu(id: widget.id));
     toolbarItems.add(_CloseMenu(id: widget.id, ffi: widget.ffi));
     final toolbarBorderRadius = BorderRadius.all(Radius.circular(4.0));
@@ -3012,6 +3016,24 @@ class _JobFormMenu extends StatelessWidget {
           color: Colors.white, size: 20),
       tooltip: 'Job form',
       onPressed: () => openJobForm(id),
+      color: _ToolbarTheme.blueColor,
+      hoverColor: _ToolbarTheme.hoverBlueColor,
+    );
+  }
+}
+
+class _UsbMenu extends StatelessWidget {
+  final String id;
+  final FFI ffi;
+  const _UsbMenu({Key? key, required this.id, required this.ffi})
+      : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return _IconMenuButton(
+      icon: Icon(Icons.usb, color: Colors.white, size: 20),
+      tooltip: 'USB devices',
+      onPressed: () => showUsbDevicesDialog(ffi, id),
       color: _ToolbarTheme.blueColor,
       hoverColor: _ToolbarTheme.hoverBlueColor,
     );
