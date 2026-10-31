@@ -111,14 +111,14 @@ jobs:
           PostInstallCmd=<None>
           AdminQuietInstCmd=
           UserQuietInstCmd=
-          $($strings -join "`n")
+          $($strings -join "`r`n")
           [SourceFiles]
           SourceFiles0=$stage\
           [SourceFiles0]
-          $($list -join "`n")
+          $($list -join "`r`n")
           "@ -replace '(?m)^\s+', '' | Set-Content tech.sed -Encoding ascii
           $p = Start-Process iexpress.exe -ArgumentList "/N /Q `"$PWD\tech.sed`"" -Wait -PassThru
-          if ($p.ExitCode -ne 0 -or -not (Test-Path $target)) { throw "IExpress failed: $($p.ExitCode)" }
+          if ($p.ExitCode -ne 0 -or -not (Test-Path $target)) { Get-Content tech.sed | Where-Object { $_ -notmatch 'key' }; throw "IExpress failed: $($p.ExitCode)" }
           Remove-Item stage/xdrive-tech-key.json
 
       - name: Sign the installer
