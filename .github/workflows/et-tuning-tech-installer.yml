@@ -1,22 +1,10 @@
-name: ET Tuning technician installer
+name: ET Tuning technician installer check
 
-# Builds ETTuningRemote-Technician-<version>.exe: the released client MSI plus the
-# X: drive technician key, which it installs to
-# C:\ProgramData\ETTuning\xdrive-tech-key.json, then sets up the technician's own
-# X: drive (res/et-tuning/tech-installer/install-technician.ps1).
-#
-# The key comes from the XDRIVE_TECH_KEY_JSON secret and gives read-write access to
-# the whole X: drive bucket, so the installer is only kept as a workflow artifact for
-# one day and is never attached to a release. Pull requests build it with a dummy key
-# to check the packaging.
+# Builds the technician installer (res/et-tuning/tech-installer/build.ps1) with a dummy
+# key and checks that Windows PowerShell can parse the script inside it. The real
+# installer is built on your own computer, so the key never reaches GitHub.
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "Client release to package, like 1.5.5 (empty: latest release)"
-        type: string
-        default: ""
   pull_request:
     paths:
       - ".github/workflows/et-tuning-tech-installer.yml"
@@ -27,7 +15,7 @@ permissions:
   contents: read
 
 jobs:
-  build:
+  check:
     runs-on: windows-2022
     steps:
       - name: Checkout source code
@@ -35,111 +23,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download the client MSI
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
+      - name: Build with a dummy key and parse the result
+        shell: powershell
         run: |
-          $tag = if ($env:VERSION) { "v$env:VERSION" } else { gh release view --repo $env:GITHUB_REPOSITORY --json tagName -q .tagName }
-          if ($LASTEXITCODE -ne 0 -or -not $tag) { throw "No release found" }
-          New-Item -ItemType Directory -Force -Path stage | Out-Null
-          gh release download $tag --repo $env:GITHUB_REPOSITORY --pattern "ETTuningRemote-*-x86_64.msi" --dir stage
-          if ($LASTEXITCODE -ne 0) { throw "Could not download the MSI from $tag" }
-          "VERSION=$($tag.TrimStart('v'))" >> $env:GITHUB_ENV
-
-      - name: Add the technician key
-        shell: pwsh
-        env:
-          KEY_JSON: ${{ github.event_name == 'workflow_dispatch' && secrets.XDRIVE_TECH_KEY_JSON || '' }}
-          IS_TEST: ${{ github.event_name != 'workflow_dispatch' }}
-        run: |
-          $out = "stage/xdrive-tech-key.json"
-          if ($env:IS_TEST -eq "true") {
-            '{"type":"service_account","client_email":"dummy@example.com","private_key":"dummy"}' | Set-Content $out -NoNewline
-            "SUFFIX=-test" >> $env:GITHUB_ENV
-            exit 0
-          }
-          if (-not $env:KEY_JSON) { throw "Add the XDRIVE_TECH_KEY_JSON repository secret first." }
-          $key = $env:KEY_JSON | ConvertFrom-Json
-          if ($key.type -ne "service_account" -or -not $key.private_key -or -not $key.client_email) {
-            throw "XDRIVE_TECH_KEY_JSON is not a service account key file."
-          }
-          [IO.File]::WriteAllText("$PWD/$out", $env:KEY_JSON)
-          "SUFFIX=" >> $env:GITHUB_ENV
-
-      - name: Build the installer
-        shell: pwsh
-        run: |
-          Copy-Item res/et-tuning/tech-installer/install-technician.ps1, res/et-tuning/xdrive-tech-setup.ps1 stage/
-          New-Item -ItemType Directory -Force -Path out | Out-Null
-          $stage = (Resolve-Path stage).Path
-          $target = Join-Path (Resolve-Path out).Path "ETTuningRemote-Technician-$env:VERSION$env:SUFFIX.exe"
-          $files = @(Get-ChildItem $stage -File | ForEach-Object Name)
-          $strings = for ($i = 0; $i -lt $files.Count; $i++) { "FILE$i=`"$($files[$i])`"" }
-          $list = for ($i = 0; $i -lt $files.Count; $i++) { "%FILE$i%=" }
-          @"
-          [Version]
-          Class=IEXPRESS
-          SEDVersion=3
-          [Options]
-          PackagePurpose=InstallApp
-          ShowInstallProgramWindow=0
-          HideExtractAnimation=1
-          UseLongFileName=1
-          InsideCompressed=0
-          CAB_FixedSize=0
-          CAB_ResvCodeSigning=0
-          RebootMode=N
-          InstallPrompt=%InstallPrompt%
-          DisplayLicense=%DisplayLicense%
-          FinishMessage=%FinishMessage%
-          TargetName=%TargetName%
-          FriendlyName=%FriendlyName%
-          AppLaunched=%AppLaunched%
-          PostInstallCmd=%PostInstallCmd%
-          AdminQuietInstCmd=%AdminQuietInstCmd%
-          UserQuietInstCmd=%UserQuietInstCmd%
-          SourceFiles=SourceFiles
-          [Strings]
-          InstallPrompt=
-          DisplayLicense=
-          FinishMessage=
-          TargetName=$target
-          FriendlyName=ET Tuning technician setup
-          AppLaunched=powershell.exe -NoProfile -ExecutionPolicy Bypass -File install-technician.ps1
-          PostInstallCmd=<None>
-          AdminQuietInstCmd=
-          UserQuietInstCmd=
-          $($strings -join "`r`n")
-          [SourceFiles]
-          SourceFiles0=$stage\
-          [SourceFiles0]
-          $($list -join "`r`n")
-          "@ -replace '(?m)^\s+', '' | Set-Content tech.sed -Encoding ascii
-          $p = Start-Process iexpress.exe -ArgumentList "/N /Q `"$PWD\tech.sed`"" -Wait -PassThru
-          if ($p.ExitCode -ne 0 -or -not (Test-Path $target)) { Get-Content tech.sed | Where-Object { $_ -notmatch 'key' }; throw "IExpress failed: $($p.ExitCode)" }
-          Remove-Item stage/xdrive-tech-key.json
-
-      - name: Sign the installer
-        shell: pwsh
-        env:
-          PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
-          CERT_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          if (-not $env:PFX_BASE64) { exit 0 }
-          [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:PFX_BASE64))
-          $signtool = Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName -Descending | Select-Object -First 1
-          Get-ChildItem ./out -Filter *.exe | ForEach-Object {
-            & $signtool.FullName sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:CERT_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 $_.FullName
-            if ($LASTEXITCODE -ne 0) { throw "signing failed: $($_.FullName)" }
-          }
-          Remove-Item "$env:RUNNER_TEMP\cert.pfx"
-
-      - name: Upload the installer
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: technician-installer${{ env.SUFFIX }}
-          path: ./out/*.exe
-          retention-days: 1
-          if-no-files-found: error
+          $ErrorActionPreference = "Stop"
+          '{"type":"service_account","client_email":"dummy@example.com","private_key":"dummy"}' | Set-Content "$env:RUNNER_TEMP\key.json" -Encoding ascii
+          & res\et-tuning\tech-installer\build.ps1 -KeyFile "$env:RUNNER_TEMP\key.json"
+          $cmd = Get-Content "$env:RUNNER_TEMP\ETTuning-Technician-Setup.cmd" -Raw
+          $script = ($cmd -split '#ET-TECH-SCRIPT#')[2]
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseInput($script, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { $errors | ForEach-Object { Write-Host $_ }; throw "The embedded script does not parse." }
+          $CmdPath = "x"; $User = "x"
+          Invoke-Expression ($script -split 'if \(-not \$User\)')[0]
+          if ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($KeyBase64)) -notmatch "dummy@example.com") { throw "Key is not embedded." }
+          if ($TechSetup -notmatch "ET Tuning X drive") { throw "X: drive setup script is not embedded." }
+          $errors = $null
+          [Management.Automation.Language.Parser]::ParseInput($TechSetup, [ref]$null, [ref]$errors) | Out-Null
+          if ($errors) { throw "The embedded X: drive setup script does not parse." }
+          Write-Host "OK"
