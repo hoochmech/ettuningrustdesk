@@ -105,6 +105,8 @@ pub struct Remote<T: InvokeUiSession> {
     cursor_dedupe: CursorDedupe,
     #[cfg(windows)]
     xdrive_tokens: Option<crate::xdrive::TokenSender>,
+    // Mode 1 impl key to try if the automatic mode 2 turn-on at connect fails.
+    auto_privacy_fallback: Option<String>,
 }
 
 #[derive(Default)]
@@ -114,6 +116,7 @@ struct ParsedPeerInfo {
     idd_impl: String,
     support_view_camera: bool,
     support_terminal: bool,
+    privacy_mode_impls: Vec<(String, String)>,
 }
 
 impl ParsedPeerInfo {
@@ -160,6 +163,7 @@ impl<T: InvokeUiSession> Remote<T> {
             cursor_dedupe: Default::default(),
             #[cfg(windows)]
             xdrive_tokens: None,
+            auto_privacy_fallback: None,
         }
     }
 
@@ -1357,30 +1361,75 @@ impl<T: InvokeUiSession> Remote<T> {
         }
     }
 
-    async fn send_toggle_privacy_mode_msg(&self, peer: &mut Stream) {
+    // Privacy mode is turned on automatically when a session connects: mode 2 (virtual
+    // display) first, falling back to mode 1 (magnifier / exclude-from-capture) if it fails.
+    async fn send_auto_privacy_mode_msg(&mut self, peer: &mut Stream) {
         if self.handler.is_view_camera() {
             return;
         }
-        let lc = self.handler.lc.read().unwrap();
-        if lc.version >= hbb_common::get_version_number("1.2.4")
-            && lc.get_toggle_option("privacy-mode")
-        {
-            let impl_key = lc.get_option("privacy-mode-impl-key");
-            if impl_key == crate::privacy_mode::PRIVACY_MODE_IMPL_WIN_VIRTUAL_DISPLAY
-                && !self.peer_info.is_support_virtual_display()
-            {
-                return;
-            }
-            let mut misc = Misc::new();
-            misc.set_toggle_privacy_mode(TogglePrivacyMode {
-                impl_key,
-                on: true,
-                ..Default::default()
-            });
-            let mut msg_out = Message::new();
-            msg_out.set_misc(misc);
-            allow_err!(peer.send(&msg_out).await);
+        if self.handler.lc.read().unwrap().version < hbb_common::get_version_number("1.2.4") {
+            return;
         }
+        let mode2 = crate::privacy_mode::PRIVACY_MODE_IMPL_WIN_VIRTUAL_DISPLAY;
+        let mode1 = self
+            .peer_info
+            .privacy_mode_impls
+            .iter()
+            .map(|(k, _)| k)
+            .find(|k| k.as_str() != mode2)
+            .cloned();
+        let has_mode2 = self.peer_info.is_support_virtual_display()
+            && self.peer_info.privacy_mode_impls.iter().any(|(k, _)| k == mode2);
+        let impl_key = if has_mode2 {
+            self.auto_privacy_fallback = mode1;
+            mode2.to_owned()
+        } else if let Some(mode1) = mode1 {
+            mode1
+        } else {
+            return;
+        };
+        log::info!("Auto turning on privacy mode: {}", impl_key);
+        allow_err!(peer.send(&Self::make_privacy_mode_on_msg(impl_key)).await);
+    }
+
+    fn make_privacy_mode_on_msg(impl_key: String) -> Message {
+        let mut misc = Misc::new();
+        misc.set_toggle_privacy_mode(TogglePrivacyMode {
+            impl_key,
+            on: true,
+            ..Default::default()
+        });
+        let mut msg_out = Message::new();
+        msg_out.set_misc(misc);
+        msg_out
+    }
+
+    fn try_auto_privacy_fallback(
+        &mut self,
+        state: back_notification::PrivacyModeState,
+        impl_key: &str,
+    ) -> bool {
+        let Some(fallback) = self.auto_privacy_fallback.take() else {
+            return false;
+        };
+        if impl_key != crate::privacy_mode::PRIVACY_MODE_IMPL_WIN_VIRTUAL_DISPLAY
+            || !matches!(
+                state,
+                back_notification::PrivacyModeState::PrvOnFailed
+                    | back_notification::PrivacyModeState::PrvOnFailedPlugin
+                    | back_notification::PrivacyModeState::PrvNotSupported
+            )
+        {
+            return false;
+        }
+        log::warn!(
+            "Privacy mode 2 failed ({:?}), falling back to {}",
+            state,
+            fallback
+        );
+        self.sender
+            .send(Data::Message(Self::make_privacy_mode_on_msg(fallback)))
+            .is_ok()
     }
 
     fn contains_key_frame(vf: &VideoFrame) -> bool {
@@ -1559,7 +1608,7 @@ impl<T: InvokeUiSession> Remote<T> {
                         self.handler.close_success();
                         self.handler.adapt_size();
                         self.send_toggle_virtual_display_msg(peer).await;
-                        self.send_toggle_privacy_mode_msg(peer).await;
+                        self.send_auto_privacy_mode_msg(peer).await;
                     }
                     self.video_format = CodecFormat::from(&vf);
 
@@ -2442,6 +2491,10 @@ impl<T: InvokeUiSession> Remote<T> {
                 .map(|v| v.as_bool())
                 .flatten()
                 .unwrap_or(false);
+            self.peer_info.privacy_mode_impls = platform_additions
+                .get("supported_privacy_mode_impl")
+                .and_then(|v| serde_json::from_value(v.clone()).ok())
+                .unwrap_or_default();
         }
     }
 
@@ -2543,6 +2596,9 @@ impl<T: InvokeUiSession> Remote<T> {
         details: String,
         impl_key: String,
     ) -> bool {
+        if self.try_auto_privacy_fallback(state, &impl_key) {
+            return true;
+        }
         match state {
             back_notification::PrivacyModeState::PrvOnByOther => {
                 self.handler.msgbox(
