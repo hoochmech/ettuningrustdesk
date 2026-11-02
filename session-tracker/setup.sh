@@ -20,6 +20,9 @@ fail() { echo; echo "STOPPED: $*"; exit 1; }
 [ -n "$EMAIL" ] || fail "pass your Google account email: bash setup.sh you@example.com"
 cd "$(dirname "$0")" || fail "cannot find the session-tracker folder"
 FB="npx --yes firebase-tools@15"
+# Cloud Shell opened on another project (such as ettuning-fileshare) bills Firebase's API
+# calls to that project, which fail there; pin everything to this one.
+export GOOGLE_CLOUD_PROJECT="$PROJECT" CLOUDSDK_CORE_PROJECT="$PROJECT" GOOGLE_CLOUD_QUOTA_PROJECT="$PROJECT"
 
 echo "== 1/7 Project and APIs"
 gcloud config set project "$PROJECT" --quiet >/dev/null 2>&1 || fail "could not select project $PROJECT."
