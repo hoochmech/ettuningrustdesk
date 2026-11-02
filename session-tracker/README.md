@@ -2,7 +2,7 @@
 
 Customer and job database for ET Tuning Remote. Every remote session a technician
 logs into is recorded automatically; when it ends it waits on the dashboard for the
-job details: customer, work category, billable, vehicle make, engine make → model →
+job details: customer, work category, billable, vehicle make and unit number, engine make → model →
 ECM type, the X: drive file used, and for warranty jobs the original job and the
 issue.
 
