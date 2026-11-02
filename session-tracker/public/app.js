@@ -339,6 +339,7 @@ async function openSessionForm(id) {
         <label>Engine model<select name="model"></select></label>
         <label>ECM type<select name="ecm"></select></label>
       </div>
+      <label style="margin-top:12px">Vehicle unit number<input name="unit" value="${esc(s.unit_number)}" placeholder="The customer's number for this truck" maxlength="100"></label>
       <div id="origfile-wrap" hidden>
         <label style="margin-top:12px">Original file used (X: drive)
           <div class="picker"><input name="origsearch" placeholder="The file the earlier tune used: ID or part of the name" autocomplete="off"><div class="picker-list" hidden></div></div>
@@ -387,6 +388,7 @@ async function openSessionForm(id) {
       origFiles.push(o.files[0]);
       drawOrig();
     }
+    if (o?.unit_number && !f.unit.value) f.unit.value = o.unit_number;
     if (o && !f.vehicle.value && !f.make.value) {
       fillVehicle(o.vehicle_make || "");
       fill(f.make, keep(S.engines.map((m) => m.name), o.engine_make), o.engine_make || "", "Choose make");
@@ -537,6 +539,7 @@ async function openSessionForm(id) {
       original_job_pre_tracking: pre,
       original_job_note: pre ? f.original_note.value.trim() : "",
       vehicle_make: f.vehicle.value,
+      unit_number: f.unit.value.trim(),
       engine_make: f.make.value,
       engine_model: f.model.value,
       ecm_type: f.ecm.value,
@@ -693,7 +696,7 @@ VIEWS.sessions = {
       if (fl.billable && s.billable !== (fl.billable === "yes")) return false;
       if (!q) return true;
       return [customerName(s.customer_id), deviceLabel(s.rustdesk_id), s.technician_name, s.notes, s.warranty_issue,
-        s.vehicle_make, s.engine_make, s.engine_model, s.ecm_type, ...(s.file_ids || []), s.original_file?.file_id].join(" ").toLowerCase().includes(q);
+        s.vehicle_make, s.unit_number, s.engine_make, s.engine_model, s.ecm_type, ...(s.file_ids || []), s.original_file?.file_id].join(" ").toLowerCase().includes(q);
     });
   },
   body() {
@@ -708,7 +711,7 @@ VIEWS.sessions = {
         <td>${esc(customerName(s.customer_id))}</td><td class="hide-sm">${esc(deviceLabel(s.rustdesk_id))}</td>
         <td>${esc(categoryName(s.category_id) || s.category_name || "")}${s.status !== "complete" ? ` <span class="pill warn">${esc(s.status.replace("_", " "))}</span>` : ""}</td>
         <td>${s.billable === true ? `<span class="pill ok">Yes</span>` : s.billable === false ? `<span class="pill">No</span>` : ""}</td>
-        <td class="hide-sm">${esc([s.vehicle_make, s.engine_make, s.engine_model, s.ecm_type].filter(Boolean).join(" / "))}</td>
+        <td class="hide-sm">${esc([s.vehicle_make, s.unit_number && `Unit ${s.unit_number}`, s.engine_make, s.engine_model, s.ecm_type].filter(Boolean).join(" / "))}</td>
         <td class="hide-sm">${esc((s.file_ids || []).join(", "))}</td>
         <td class="hide-sm">${esc(s.technician_name)}</td></tr>`).join("")}
     </table></div>
@@ -733,7 +736,7 @@ function exportCsv(rows) {
     ["Warranty issue", (s) => s.warranty_issue],
     ["Original file", (s) => s.original_file?.file_id || ""],
     ["Original job", (s) => (s.original_job_pre_tracking ? `Before tracking: ${s.original_job_note || ""}` : s.original_job_id ? toDate(findSession(s.original_job_id)?.started_at)?.toISOString() || s.original_job_id : "")],
-    ["Vehicle make", (s) => s.vehicle_make],
+    ["Vehicle make", (s) => s.vehicle_make], ["Unit number", (s) => s.unit_number],
     ["Engine make", (s) => s.engine_make], ["Engine model", (s) => s.engine_model], ["ECM", (s) => s.ecm_type],
     ["Files", (s) => (s.file_ids || []).join(" ")],
     ["Technician", (s) => s.technician_name], ["Notes", (s) => s.notes], ["Status", (s) => s.status],
